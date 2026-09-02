@@ -1,0 +1,377 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <title>DeskRemote Stream</title>
+    <style>
+        * { box-sizing: border-box; }
+        body, html {
+            margin: 0;
+            padding: 0;
+            width: 100%;
+            height: 100%;
+            background: #000;
+            overflow: hidden;
+            font-family: system-ui, -apple-system, sans-serif;
+            touch-action: none;
+        }
+        #container {
+            position: relative;
+            width: 100vw;
+            height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: #000;
+        }
+        video {
+            width: 100%;
+            height: 100%;
+            object-fit: contain;
+            cursor: crosshair;
+            background: #000;
+        }
+        #statusOverlay {
+            position: absolute;
+            top: 12px;
+            left: 12px;
+            padding: 6px 14px;
+            background: rgba(0, 0, 0, 0.8);
+            color: #fff;
+            font-size: 13px;
+            border-radius: 6px;
+            pointer-events: none;
+            z-index: 10;
+            transition: opacity 0.5s;
+            border: 1px solid #333;
+        }
+        .connected { color: #4caf50 !important; border-color: #2e7d32 !important; }
+
+        #topControls {
+            position: absolute;
+            top: 12px;
+            right: 12px;
+            display: flex;
+            gap: 8px;
+            z-index: 20;
+            opacity: 0.8;
+            transition: opacity 0.3s;
+        }
+        #topControls:hover {
+            opacity: 1;
+        }
+        .ctrl-btn {
+            background: rgba(30, 30, 30, 0.85);
+            border: 1px solid #555;
+            color: #fff;
+            padding: 6px 12px;
+            border-radius: 6px;
+            font-size: 13px;
+            cursor: pointer;
+            backdrop-filter: blur(4px);
+        }
+        .ctrl-btn:hover {
+            background: #1976d2;
+            border-color: #1976d2;
+        }
+
+        #authModal {
+            position: fixed;
+            inset: 0;
+            background: rgba(0, 0, 0, 0.88);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 100;
+        }
+        .auth-card {
+            background: #1e1e1e;
+            border: 1px solid #333;
+            padding: 24px;
+            border-radius: 10px;
+            width: 320px;
+            text-align: center;
+            box-shadow: 0 8px 24px rgba(0,0,0,0.6);
+        }
+        .auth-card h3 {
+            margin: 0 0 16px 0;
+            color: #fff;
+            font-size: 18px;
+        }
+        .auth-card input {
+            width: 100%;
+            padding: 12px;
+            background: #2b2b2b;
+            border: 1px solid #444;
+            border-radius: 6px;
+            color: #fff;
+            font-size: 18px;
+            text-align: center;
+            letter-spacing: 4px;
+            margin-bottom: 14px;
+            outline: none;
+        }
+        .auth-card input:focus {
+            border-color: #1976d2;
+        }
+        .auth-card button {
+            width: 100%;
+            padding: 12px;
+            background: #1976d2;
+            border: none;
+            border-radius: 6px;
+            color: #fff;
+            font-size: 15px;
+            font-weight: 600;
+            cursor: pointer;
+        }
+        .auth-card button:hover {
+            background: #1565c0;
+        }
+        #authError {
+            color: #f44336;
+            font-size: 12px;
+            margin-top: 10px;
+            min-height: 16px;
+        }
+    </style>
+</head>
+<body>
+    <div id="authModal">
+        <div class="auth-card">
+            <h3>Доступ к ПК</h3>
+            <input type="password" id="pinInput" placeholder="Введите PIN" maxlength="16" autofocus>
+            <button id="loginBtn">Войти на весь экран</button>
+            <div id="authError"></div>
+        </div>
+    </div>
+
+    <div id="container">
+        <div id="statusOverlay">Ожидание ввода PIN...</div>
+        <div id="topControls">
+            <button id="fsBtn" class="ctrl-btn" title="Развернуть / Свернуть">⛶ На весь экран</button>
+        </div>
+        <video id="remoteVideo" autoplay playsinline muted></video>
+    </div>
+
+    <script>
+        const video = document.getElementById('remoteVideo');
+        const statusOverlay = document.getElementById('statusOverlay');
+        const authModal = document.getElementById('authModal');
+        const pinInput = document.getElementById('pinInput');
+        const loginBtn = document.getElementById('loginBtn');
+        const authError = document.getElementById('authError');
+        const fsBtn = document.getElementById('fsBtn');
+        let pc, inputChannel, ws;
+
+        const iceConfig = {
+            iceServers: [
+                { urls: 'stun:stun.l.google.com:19302' },
+                { urls: 'stun:stun1.l.google.com:19302' },
+                { urls: 'stun:stun2.l.google.com:19302' },
+                { urls: 'stun:stun.cloudflare.com:3478' }
+            ]
+        };
+
+        function toggleFullScreen() {
+            if (!document.fullscreenElement) {
+                document.documentElement.requestFullscreen().catch(() => {});
+            } else {
+                if (document.exitFullscreen) {
+                    document.exitFullscreen().catch(() => {});
+                }
+            }
+        }
+
+        fsBtn.addEventListener('click', toggleFullScreen);
+        document.addEventListener('fullscreenchange', () => {
+            fsBtn.textContent = document.fullscreenElement ? "🗗 Оконный режим" : "⛶ На весь экран";
+        });
+
+        function setStatus(text, isConnected = false) {
+            statusOverlay.textContent = text;
+            statusOverlay.style.opacity = '1';
+            if (isConnected) {
+                statusOverlay.classList.add("connected");
+                setTimeout(() => statusOverlay.style.opacity = '0', 3500);
+            } else {
+                statusOverlay.classList.remove("connected");
+            }
+        }
+
+        function initConnection(pin) {
+            authError.textContent = "";
+            setStatus("Авторизация на сервере...");
+            const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
+            ws = new WebSocket(`${protocol}//${location.host}/ws?pin=${encodeURIComponent(pin)}`);
+
+            ws.onopen = () => {
+                localStorage.setItem('deskremote_pin', pin);
+                authModal.style.display = 'none';
+                setStatus("Установка WebRTC соединения...");
+                setupWebRTC();
+            };
+
+            ws.onerror = () => {
+                authModal.style.display = 'flex';
+                authError.textContent = "Неверный PIN-код или сервер недоступен";
+                setStatus("Ошибка авторизации");
+                localStorage.removeItem('deskremote_pin');
+                if (pc) pc.close();
+            };
+        }
+
+        loginBtn.addEventListener('click', () => {
+            const pin = pinInput.value.trim();
+            if (pin) {
+                toggleFullScreen();
+                initConnection(pin);
+            }
+        });
+
+        pinInput.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') loginBtn.click();
+        });
+
+        const savedPin = localStorage.getItem('deskremote_pin');
+        if (savedPin) {
+            initConnection(savedPin);
+        }
+
+        async function setupWebRTC() {
+            if (pc) pc.close();
+            pc = new RTCPeerConnection(iceConfig);
+
+            pc.ontrack = (event) => {
+                if (event.streams && event.streams[0]) {
+                    video.srcObject = event.streams[0];
+                } else {
+                    video.srcObject = new MediaStream([event.track]);
+                }
+                video.play().then(() => {
+                    setStatus("Трансляция активна", true);
+                }).catch(() => {
+                    setStatus("Трансляция готова (кликните по экрану)");
+                });
+            };
+
+            pc.onconnectionstatechange = () => {
+                if (pc.connectionState === 'connected') {
+                    setStatus("Соединено! Ожидание видеопотока...");
+                } else if (pc.connectionState === 'disconnected' || pc.connectionState === 'failed') {
+                    setStatus("Соединение разорвано. Переподключение...");
+                }
+            };
+
+            inputChannel = pc.createDataChannel("input", { ordered: false, maxRetransmits: 0 });
+            inputChannel.onopen = () => bindInputEvents();
+
+            pc.onicecandidate = (e) => {
+                if (e.candidate && ws && ws.readyState === WebSocket.OPEN) {
+                    ws.send(JSON.stringify({ type: "candidate", candidate: e.candidate.toJSON() }));
+                }
+            };
+
+            pc.addTransceiver('video', { direction: 'recvonly' });
+            const offer = await pc.createOffer();
+            await pc.setLocalDescription(offer);
+            ws.send(JSON.stringify({ type: "offer", sdp: offer.sdp }));
+
+            ws.onmessage = async (e) => {
+                const msg = JSON.parse(e.data);
+                if (msg.type === "answer") {
+                    await pc.setRemoteDescription(new RTCSessionDescription({ type: 'answer', sdp: msg.sdp }));
+                } else if (msg.type === "candidate" && msg.candidate) {
+                    await pc.addIceCandidate(new RTCIceCandidate(msg.candidate));
+                }
+            };
+        }
+
+        function sendInput(data) {
+            if (inputChannel && inputChannel.readyState === "open") {
+                inputChannel.send(JSON.stringify(data));
+            }
+        }
+
+        function getNormalizedCoords(e) {
+            const rect = video.getBoundingClientRect();
+            const videoRatio = (video.videoWidth || 16) / (video.videoHeight || 9);
+            const elementRatio = rect.width / rect.height;
+            let renderW = rect.width, renderH = rect.height, offsetX = 0, offsetY = 0;
+
+            if (elementRatio > videoRatio) {
+                renderW = rect.height * videoRatio;
+                offsetX = (rect.width - renderW) / 2;
+            } else {
+                renderH = rect.width / videoRatio;
+                offsetY = (rect.height - renderH) / 2;
+            }
+
+            const clientX = e.clientX !== undefined ? e.clientX : (e.touches && e.touches[0] ? e.touches[0].clientX : 0);
+            const clientY = e.clientY !== undefined ? e.clientY : (e.touches && e.touches[0] ? e.touches[0].clientY : 0);
+
+            const clickX = clientX - rect.left - offsetX;
+            const clickY = clientY - rect.top - offsetY;
+
+            return {
+                x: Math.max(0, Math.min(1, clickX / renderW)),
+                y: Math.max(0, Math.min(1, clickY / renderH))
+            };
+        }
+
+        function bindInputEvents() {
+            let ticking = false;
+
+            video.addEventListener('mousemove', (e) => {
+                if (!ticking) {
+                    window.requestAnimationFrame(() => {
+                        const coords = getNormalizedCoords(e);
+                        sendInput({ t: "mm", x: coords.x, y: coords.y });
+                        ticking = false;
+                    });
+                    ticking = true;
+                }
+            });
+
+            video.addEventListener('mousedown', (e) => {
+                video.play().catch(() => {});
+                sendInput({ t: "md", b: e.button });
+            });
+            video.addEventListener('mouseup', (e) => sendInput({ t: "mu", b: e.button }));
+            video.addEventListener('contextmenu', (e) => e.preventDefault());
+            video.addEventListener('wheel', (e) => {
+                e.preventDefault();
+                sendInput({ t: "mw", dy: e.deltaY < 0 ? 1 : -1 });
+            }, { passive: false });
+
+            video.addEventListener('touchstart', (e) => {
+                video.play().catch(() => {});
+                if (e.touches.length === 1) {
+                    const coords = getNormalizedCoords(e);
+                    sendInput({ t: "mm", x: coords.x, y: coords.y });
+                    sendInput({ t: "md", b: 0 });
+                }
+            }, { passive: false });
+
+            video.addEventListener('touchmove', (e) => {
+                if (e.touches.length === 1) {
+                    e.preventDefault();
+                    if (!ticking) {
+                        window.requestAnimationFrame(() => {
+                            const coords = getNormalizedCoords(e);
+                            sendInput({ t: "mm", x: coords.x, y: coords.y });
+                            ticking = false;
+                        });
+                        ticking = true;
+                    }
+                }
+            }, { passive: false });
+
+            video.addEventListener('touchend', (e) => {
+                sendInput({ t: "mu", b: 0 });
+            }, { passive: false });
+        }
+    </script>
+</body>
+</html>
