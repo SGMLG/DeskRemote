@@ -303,15 +303,10 @@ func notifyURLReady(url string) {
 	nid.CbSize = uint32(unsafe.Sizeof(nid))
 	nid.HWnd = trayHWnd
 	nid.UID = 1
-	nid.UFlags = NIF_TIP | NIF_INFO
-	nid.DwInfoFlags = NIIF_INFO
+	nid.UFlags = NIF_TIP
 
 	tip, _ := syscall.UTF16FromString("DeskRemote: Активен")
 	copy(nid.SzTip[:], tip)
-	title, _ := syscall.UTF16FromString("DeskRemote готов!")
-	copy(nid.SzInfoTitle[:], title)
-	info, _ := syscall.UTF16FromString("Ссылка скопирована: " + url)
-	copy(nid.SzInfo[:], info)
 
 	procShell_NotifyIconW.Call(uintptr(NIM_MODIFY), uintptr(unsafe.Pointer(&nid)))
 }
