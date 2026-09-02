@@ -1,0 +1,26 @@
+# Binaries
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+*.zip
+*.tar.gz
+
+# External dependencies (auto-downloaded by build scripts / CI)
+ffmpeg.exe
+cloudflared.exe
+
+# Build directory
+bin/
+dist/
+
+# Logs
+*.log
+
+# OS & Editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+*.swp
