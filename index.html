@@ -14,7 +14,7 @@
             background: #000;
             overflow: hidden;
             font-family: system-ui, -apple-system, sans-serif;
-            touch-action: none;
+            -webkit-tap-highlight-color: transparent;
         }
         #container {
             position: relative;
@@ -24,6 +24,7 @@
             align-items: center;
             justify-content: center;
             background: #000;
+            touch-action: none;
         }
         video {
             width: 100%;
@@ -31,6 +32,7 @@
             object-fit: contain;
             cursor: crosshair;
             background: #000;
+            touch-action: none;
         }
         #statusOverlay {
             position: absolute;
@@ -65,7 +67,7 @@
             background: rgba(30, 30, 30, 0.85);
             border: 1px solid #555;
             color: #fff;
-            padding: 6px 12px;
+            padding: 8px 14px;
             border-radius: 6px;
             font-size: 13px;
             cursor: pointer;
@@ -79,18 +81,20 @@
         #authModal {
             position: fixed;
             inset: 0;
-            background: rgba(0, 0, 0, 0.88);
+            background: rgba(0, 0, 0, 0.92);
             display: flex;
             align-items: center;
             justify-content: center;
             z-index: 100;
+            padding: 16px;
         }
         .auth-card {
             background: #1e1e1e;
             border: 1px solid #333;
             padding: 24px;
-            border-radius: 10px;
-            width: 320px;
+            border-radius: 12px;
+            width: 100%;
+            max-width: 320px;
             text-align: center;
             box-shadow: 0 8px 24px rgba(0,0,0,0.6);
         }
@@ -101,64 +105,68 @@
         }
         .auth-card input {
             width: 100%;
-            padding: 12px;
+            padding: 14px;
             background: #2b2b2b;
             border: 1px solid #444;
-            border-radius: 6px;
+            border-radius: 8px;
             color: #fff;
-            font-size: 18px;
+            font-size: 20px;
             text-align: center;
             letter-spacing: 4px;
             margin-bottom: 14px;
             outline: none;
+            -webkit-appearance: none;
         }
         .auth-card input:focus {
             border-color: #1976d2;
         }
         .auth-card button {
             width: 100%;
-            padding: 12px;
+            padding: 14px;
             background: #1976d2;
             border: none;
-            border-radius: 6px;
+            border-radius: 8px;
             color: #fff;
-            font-size: 15px;
+            font-size: 16px;
             font-weight: 600;
             cursor: pointer;
+            -webkit-appearance: none;
         }
-        .auth-card button:hover {
+        .auth-card button:hover, .auth-card button:active {
             background: #1565c0;
         }
         #authError {
             color: #f44336;
-            font-size: 12px;
+            font-size: 13px;
             margin-top: 10px;
-            min-height: 16px;
+            min-height: 18px;
+            line-height: 1.4;
         }
     </style>
 </head>
 <body>
     <div id="authModal">
-        <div class="auth-card">
+        <form id="authForm" class="auth-card" onsubmit="return false;">
             <h3>Доступ к ПК</h3>
-            <input type="password" id="pinInput" placeholder="Введите PIN" maxlength="16" autofocus>
-            <button id="loginBtn">Войти на весь экран</button>
+            <input type="password" id="pinInput" placeholder="Введите PIN" maxlength="16" inputmode="numeric" pattern="[0-9]*" autofocus autocomplete="current-password">
+            <button type="submit" id="loginBtn">Войти</button>
             <div id="authError"></div>
-        </div>
+        </form>
     </div>
 
     <div id="container">
         <div id="statusOverlay">Ожидание ввода PIN...</div>
         <div id="topControls">
-            <button id="fsBtn" class="ctrl-btn" title="Развернуть / Свернуть">⛶ На весь экран</button>
+            <button type="button" id="fsBtn" class="ctrl-btn" title="Развернуть / Свернуть">⛶ На весь экран</button>
         </div>
-        <video id="remoteVideo" autoplay playsinline muted></video>
+        <video id="remoteVideo" autoplay playsinline webkit-playsinline x5-playsinline muted></video>
     </div>
 
     <script>
         const video = document.getElementById('remoteVideo');
         const statusOverlay = document.getElementById('statusOverlay');
         const authModal = document.getElementById('authModal');
+        const authForm = document.getElementById('authForm');
         const pinInput = document.getElementById('pinInput');
         const loginBtn = document.getElementById('loginBtn');
         const authError = document.getElementById('authError');
@@ -174,19 +182,40 @@
             ]
         };
 
+        function safeStorageSet(key, val) {
+            try { localStorage.setItem(key, val); } catch (e) {}
+        }
+        function safeStorageGet(key) {
+            try { return localStorage.getItem(key); } catch (e) { return null; }
+        }
+        function safeStorageRemove(key) {
+            try { localStorage.removeItem(key); } catch (e) {}
+        }
+
         function toggleFullScreen() {
-            if (!document.fullscreenElement) {
-                document.documentElement.requestFullscreen().catch(() => {});
-            } else {
-                if (document.exitFullscreen) {
-                    document.exitFullscreen().catch(() => {});
+            try {
+                if (!document.fullscreenElement && !document.webkitFullscreenElement) {
+                    if (document.documentElement.requestFullscreen) {
+                        document.documentElement.requestFullscreen().catch(() => {});
+                    } else if (document.documentElement.webkitRequestFullscreen) {
+                        document.documentElement.webkitRequestFullscreen();
+                    }
+                } else {
+                    if (document.exitFullscreen) {
+                        document.exitFullscreen().catch(() => {});
+                    } else if (document.webkitExitFullscreen) {
+                        document.webkitExitFullscreen();
+                    }
                 }
-            }
+            } catch (e) {}
         }
 
         fsBtn.addEventListener('click', toggleFullScreen);
         document.addEventListener('fullscreenchange', () => {
             fsBtn.textContent = document.fullscreenElement ? "🗗 Оконный режим" : "⛶ На весь экран";
+        });
+        document.addEventListener('webkitfullscreenchange', () => {
+            fsBtn.textContent = document.webkitFullscreenElement ? "🗗 Оконный режим" : "⛶ На весь экран";
         });
 
         function setStatus(text, isConnected = false) {
@@ -202,90 +231,132 @@
 
         function initConnection(pin) {
             authError.textContent = "";
+            loginBtn.textContent = "⏳ Вход...";
+            loginBtn.disabled = true;
             setStatus("Авторизация на сервере...");
-            const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
-            ws = new WebSocket(`${protocol}//${location.host}/ws?pin=${encodeURIComponent(pin)}`);
 
-            ws.onopen = () => {
-                localStorage.setItem('deskremote_pin', pin);
-                authModal.style.display = 'none';
-                setStatus("Установка WebRTC соединения...");
-                setupWebRTC();
-            };
+            try {
+                if (ws) {
+                    ws.close();
+                    ws = null;
+                }
+                const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
+                ws = new WebSocket(`${protocol}//${location.host}/ws?pin=${encodeURIComponent(pin)}`);
 
-            ws.onerror = () => {
-                authModal.style.display = 'flex';
-                authError.textContent = "Неверный PIN-код или сервер недоступен";
-                setStatus("Ошибка авторизации");
-                localStorage.removeItem('deskremote_pin');
-                if (pc) pc.close();
-            };
+                ws.onopen = () => {
+                    safeStorageSet('deskremote_pin', pin);
+                    authModal.style.display = 'none';
+                    loginBtn.textContent = "Войти";
+                    loginBtn.disabled = false;
+                    setStatus("Установка WebRTC соединения...");
+                    setupWebRTC();
+                };
+
+                ws.onerror = (err) => {
+                    loginBtn.textContent = "Войти";
+                    loginBtn.disabled = false;
+                    authModal.style.display = 'flex';
+                    authError.textContent = "Неверный PIN-код или сервер недоступен";
+                    setStatus("Ошибка авторизации");
+                    safeStorageRemove('deskremote_pin');
+                    if (pc) pc.close();
+                };
+
+                ws.onclose = (ev) => {
+                    loginBtn.textContent = "Войти";
+                    loginBtn.disabled = false;
+                    if (authModal.style.display === 'none') {
+                        setStatus("Соединение с сервером закрыто");
+                    }
+                };
+            } catch (err) {
+                loginBtn.textContent = "Войти";
+                loginBtn.disabled = false;
+                authError.textContent = "Ошибка: " + err.message;
+            }
         }
 
-        loginBtn.addEventListener('click', () => {
+        function handleLogin() {
             const pin = pinInput.value.trim();
             if (pin) {
                 toggleFullScreen();
                 initConnection(pin);
+            } else {
+                authError.textContent = "Введите PIN-код";
             }
+        }
+
+        authForm.addEventListener('submit', (e) => {
+            e.preventDefault();
+            handleLogin();
         });
 
-        pinInput.addEventListener('keydown', (e) => {
-            if (e.key === 'Enter') loginBtn.click();
+        loginBtn.addEventListener('click', (e) => {
+            e.preventDefault();
+            handleLogin();
         });
 
-        const savedPin = localStorage.getItem('deskremote_pin');
+        const savedPin = safeStorageGet('deskremote_pin');
         if (savedPin) {
             initConnection(savedPin);
         }
 
         async function setupWebRTC() {
-            if (pc) pc.close();
-            pc = new RTCPeerConnection(iceConfig);
+            try {
+                if (pc) pc.close();
+                pc = new RTCPeerConnection(iceConfig);
 
-            pc.ontrack = (event) => {
-                if (event.streams && event.streams[0]) {
-                    video.srcObject = event.streams[0];
-                } else {
-                    video.srcObject = new MediaStream([event.track]);
+                pc.ontrack = (event) => {
+                    if (event.streams && event.streams[0]) {
+                        video.srcObject = event.streams[0];
+                    } else {
+                        video.srcObject = new MediaStream([event.track]);
+                    }
+                    video.muted = true;
+                    video.play().then(() => {
+                        setStatus("Трансляция активна", true);
+                    }).catch(() => {
+                        setStatus("Трансляция готова (коснитесь экрана)");
+                    });
+                };
+
+                pc.onconnectionstatechange = () => {
+                    if (pc.connectionState === 'connected') {
+                        setStatus("Соединено! Ожидание видеопотока...");
+                    } else if (pc.connectionState === 'disconnected' || pc.connectionState === 'failed') {
+                        setStatus("Соединение разорвано. Переподключение...");
+                    }
+                };
+
+                inputChannel = pc.createDataChannel("input", { ordered: false, maxRetransmits: 0 });
+                inputChannel.onopen = () => bindInputEvents();
+
+                pc.onicecandidate = (e) => {
+                    if (e.candidate && ws && ws.readyState === WebSocket.OPEN) {
+                        ws.send(JSON.stringify({ type: "candidate", candidate: e.candidate.toJSON() }));
+                    }
+                };
+
+                pc.addTransceiver('video', { direction: 'recvonly' });
+                const offer = await pc.createOffer();
+                await pc.setLocalDescription(offer);
+                if (ws && ws.readyState === WebSocket.OPEN) {
+                    ws.send(JSON.stringify({ type: "offer", sdp: offer.sdp }));
                 }
-                video.play().then(() => {
-                    setStatus("Трансляция активна", true);
-                }).catch(() => {
-                    setStatus("Трансляция готова (кликните по экрану)");
-                });
-            };
 
-            pc.onconnectionstatechange = () => {
-                if (pc.connectionState === 'connected') {
-                    setStatus("Соединено! Ожидание видеопотока...");
-                } else if (pc.connectionState === 'disconnected' || pc.connectionState === 'failed') {
-                    setStatus("Соединение разорвано. Переподключение...");
-                }
-            };
-
-            inputChannel = pc.createDataChannel("input", { ordered: false, maxRetransmits: 0 });
-            inputChannel.onopen = () => bindInputEvents();
-
-            pc.onicecandidate = (e) => {
-                if (e.candidate && ws && ws.readyState === WebSocket.OPEN) {
-                    ws.send(JSON.stringify({ type: "candidate", candidate: e.candidate.toJSON() }));
-                }
-            };
-
-            pc.addTransceiver('video', { direction: 'recvonly' });
-            const offer = await pc.createOffer();
-            await pc.setLocalDescription(offer);
-            ws.send(JSON.stringify({ type: "offer", sdp: offer.sdp }));
-
-            ws.onmessage = async (e) => {
-                const msg = JSON.parse(e.data);
-                if (msg.type === "answer") {
-                    await pc.setRemoteDescription(new RTCSessionDescription({ type: 'answer', sdp: msg.sdp }));
-                } else if (msg.type === "candidate" && msg.candidate) {
-                    await pc.addIceCandidate(new RTCIceCandidate(msg.candidate));
-                }
-            };
+                ws.onmessage = async (e) => {
+                    try {
+                        const msg = JSON.parse(e.data);
+                        if (msg.type === "answer") {
+                            await pc.setRemoteDescription(new RTCSessionDescription({ type: 'answer', sdp: msg.sdp }));
+                        } else if (msg.type === "candidate" && msg.candidate) {
+                            await pc.addIceCandidate(new RTCIceCandidate(msg.candidate));
+                        }
+                    } catch (err) {}
+                };
+            } catch (err) {
+                setStatus("Ошибка WebRTC: " + err.message);
+            }
         }
 
         function sendInput(data) {
@@ -323,6 +394,7 @@
         function bindInputEvents() {
             let ticking = false;
 
+            // Мышь (ПК)
             video.addEventListener('mousemove', (e) => {
                 if (!ticking) {
                     window.requestAnimationFrame(() => {
@@ -345,6 +417,7 @@
                 sendInput({ t: "mw", dy: e.deltaY < 0 ? 1 : -1 });
             }, { passive: false });
 
+            // Сенсорное управление (Телефон / Планшет)
             video.addEventListener('touchstart', (e) => {
                 video.play().catch(() => {});
                 if (e.touches.length === 1) {
