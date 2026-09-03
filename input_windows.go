@@ -17,6 +17,7 @@ var (
 const (
 	SM_CXSCREEN          = 0
 	SM_CYSCREEN          = 1
+	MOUSEEVENTF_MOVE     = 0x0001
 	MOUSEEVENTF_LEFTDOWN = 0x0002
 	MOUSEEVENTF_LEFTUP   = 0x0004
 	MOUSEEVENTF_RIGHTDOWN = 0x0008
@@ -32,6 +33,8 @@ type InputMessage struct {
 	Type   string  `json:"t"`
 	X      float64 `json:"x,omitempty"`
 	Y      float64 `json:"y,omitempty"`
+	DX     float64 `json:"dx,omitempty"`
+	DY     float64 `json:"dy,omitempty"`
 	Button int     `json:"b,omitempty"`
 	DeltaY int     `json:"dy,omitempty"`
 	Key    string  `json:"key,omitempty"`
@@ -216,6 +219,8 @@ func handleInputEvent(msg InputMessage, screenW, screenH int) {
 		targetX := int(msg.X * float64(screenW))
 		targetY := int(msg.Y * float64(screenH))
 		procSetCursorPos.Call(uintptr(targetX), uintptr(targetY))
+	case "mrel":
+		procMouseEvent.Call(MOUSEEVENTF_MOVE, uintptr(int32(msg.DX)), uintptr(int32(msg.DY)), 0, 0)
 	case "md":
 		var flag uintptr
 		switch msg.Button {

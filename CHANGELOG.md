@@ -5,6 +5,24 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.3.0] - 2026-09-03
+
+### Added
+- **Hybrid HUD & YouTube-Style Dock**:
+  - Replaced legacy static layouts with a cinematic Hybrid HUD featuring a floating frosted-glass bottom toolbar.
+  - Live WebRTC connection indicator (`● LIVE`), real-time session stopwatch timer, and latency tag (`12 ms`).
+  - Red HD 1080p stream badge, fullscreen toggle, and instant PIN reset/disconnect button.
+- **Cinematic Genie Effect Animation**:
+  - Smooth macOS-like Genie morphing animation for flyout cards: windows dynamically expand and vacuum-shrink directly into the clicked dock pill button using `clip-path` morphing and cubic-bezier curves at 60 FPS.
+- **Interactive Flyout Cards**:
+  - **⚡ Quick Macros**: 1-click execution for `Win+D`, `Alt+Tab`, `Ctrl+Shift+Esc`, `Win+E`, `Ctrl+C`, `Ctrl+V`, `Win+L`, `Esc`.
+  - **📋 Smart Clipboard**: Instant Unicode text dispatch with quick-fill chips for URLs and commands.
+  - **🖱 Virtual Touch Trackpad**: Smooth touchpad zone with relative mouse motion (`mrel`), left/right click, and drag support.
+  - **⌨ 5-Row On-Screen Keyboard**: Integrated virtual keyboard with illuminated modifier tags.
+- **Auto-Dimming & Touch Ripples**:
+  - Intelligent 3.5s auto-dimming of floating controls during active desktop work to prevent obscuring Windows taskbar/Start menu.
+  - Cyan touch-ripple indicator providing instant physical visual confirmation of remote tap coordinates.
+
 ## [1.2.0] - 2026-09-03
 
 ### Added
