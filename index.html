@@ -15,6 +15,7 @@
             overflow: hidden;
             font-family: system-ui, -apple-system, sans-serif;
             -webkit-tap-highlight-color: transparent;
+            user-select: none;
         }
         #container {
             position: relative;
@@ -39,7 +40,7 @@
             top: 12px;
             left: 12px;
             padding: 6px 14px;
-            background: rgba(0, 0, 0, 0.8);
+            background: rgba(0, 0, 0, 0.85);
             color: #fff;
             font-size: 13px;
             border-radius: 6px;
@@ -57,11 +58,7 @@
             display: flex;
             gap: 8px;
             z-index: 20;
-            opacity: 0.85;
-            transition: opacity 0.3s;
-        }
-        #topControls:hover {
-            opacity: 1;
+            opacity: 0.9;
         }
         .ctrl-btn {
             background: rgba(30, 30, 30, 0.85);
@@ -81,36 +78,92 @@
             border-color: #1976d2;
         }
 
-        .quick-keys-bar {
+        /* Полная виртуальная клавиатура */
+        #virtualKeyboard {
             position: absolute;
-            bottom: 18px;
-            left: 50%;
-            transform: translateX(-50%);
+            bottom: 0;
+            left: 0;
+            right: 0;
+            background: rgba(18, 18, 18, 0.95);
+            border-top: 1px solid #444;
+            backdrop-filter: blur(12px);
+            padding: 8px 6px calc(8px + env(safe-area-inset-bottom));
+            z-index: 30;
+            display: none;
+            flex-direction: column;
+            gap: 5px;
+            box-shadow: 0 -6px 24px rgba(0,0,0,0.7);
+        }
+        .kb-input-bar {
             display: flex;
             gap: 6px;
-            z-index: 25;
-            background: rgba(20, 20, 20, 0.88);
-            padding: 6px 10px;
-            border-radius: 10px;
-            backdrop-filter: blur(8px);
-            border: 1px solid #444;
-            box-shadow: 0 4px 16px rgba(0,0,0,0.5);
+            margin-bottom: 4px;
         }
-        .qk-btn {
-            background: #2b2b2b;
-            color: #fff;
-            border: 1px solid #555;
+        .kb-input-bar input {
+            flex: 1;
             padding: 8px 12px;
+            background: #2b2b2b;
+            border: 1px solid #555;
             border-radius: 6px;
+            color: #fff;
+            font-size: 14px;
+            outline: none;
+            user-select: text;
+        }
+        .kb-input-bar input:focus {
+            border-color: #1976d2;
+        }
+        .kb-input-bar button {
+            background: #1976d2;
+            color: #fff;
+            border: none;
+            border-radius: 6px;
+            padding: 0 14px;
             font-size: 13px;
             font-weight: 600;
             cursor: pointer;
-            user-select: none;
-            touch-action: manipulation;
+            white-space: nowrap;
         }
-        .qk-btn:hover, .qk-btn:active {
-            background: #1976d2;
-            border-color: #1976d2;
+        .kb-row {
+            display: flex;
+            gap: 4px;
+            justify-content: center;
+            width: 100%;
+        }
+        .kb-key {
+            flex: 1;
+            min-width: 0;
+            height: 38px;
+            background: #2e2e2e;
+            color: #eee;
+            border: 1px solid #444;
+            border-radius: 5px;
+            font-size: 13px;
+            font-weight: 600;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            touch-action: manipulation;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.3);
+        }
+        .kb-key:active {
+            background: #1976d2 !important;
+            border-color: #1976d2 !important;
+            transform: translateY(1px);
+        }
+        .kb-key.active-mod {
+            background: #0d47a1 !important;
+            border-color: #42a5f5 !important;
+            color: #fff;
+        }
+        .kb-key.wide-15 { flex: 1.5; }
+        .kb-key.wide-2 { flex: 2; }
+        .kb-key.wide-space { flex: 4; }
+        .kb-key.fn-key {
+            background: #222;
+            color: #bbb;
+            font-size: 11px;
         }
 
         #authModal {
@@ -151,6 +204,7 @@
             margin-bottom: 14px;
             outline: none;
             -webkit-appearance: none;
+            user-select: text;
         }
         .auth-card input:focus {
             border-color: #1976d2;
@@ -196,15 +250,26 @@
             <button type="button" id="fsBtn" class="ctrl-btn" title="Развернуть / Свернуть">⛶ На весь экран</button>
         </div>
 
-        <div id="quickKeys" class="quick-keys-bar" style="display:none;">
-            <button type="button" class="qk-btn" data-key="Escape">Esc</button>
-            <button type="button" class="qk-btn" data-key="Tab">Tab</button>
-            <button type="button" class="qk-btn" data-key="Meta">Win</button>
-            <button type="button" class="qk-btn" data-key="Backspace">⌫ Back</button>
-            <button type="button" class="qk-btn" data-key="Enter">⏎ Enter</button>
-        </div>
+        <!-- Полная экранная клавиатура -->
+        <div id="virtualKeyboard">
+            <div class="kb-input-bar">
+                <input type="text" id="directTextInput" placeholder="Ввести текст с телефона...">
+                <button type="button" id="sendDirectTextBtn">Ввести ⏎</button>
+                <button type="button" id="langSwitchBtn" style="background:#37474f;">🌐 RU</button>
+                <button type="button" id="closeKbdBtn" style="background:#424242; padding:0 10px;">✕</button>
+            </div>
 
-        <input type="text" id="mobileInput" style="position:fixed; opacity:0; left:0; top:-100px; width:1px; height:1px; pointer-events:none; z-index:-1;" autocapitalize="off" autocomplete="off" autocorrect="off" spellcheck="false">
+            <!-- Ряд 1: Esc, 1..0, -, =, Backspace -->
+            <div class="kb-row" id="kbRow1"></div>
+            <!-- Ряд 2: Tab, Q..P, [, ] -->
+            <div class="kb-row" id="kbRow2"></div>
+            <!-- Ряд 3: Caps, A..L, ;, ', Enter -->
+            <div class="kb-row" id="kbRow3"></div>
+            <!-- Ряд 4: Shift, Z..M, ,, ., /, ▲ -->
+            <div class="kb-row" id="kbRow4"></div>
+            <!-- Ряд 5: Ctrl, Win, Alt, Пробел, ◄, ▼, ► -->
+            <div class="kb-row" id="kbRow5"></div>
+        </div>
 
         <video id="remoteVideo" autoplay playsinline webkit-playsinline x5-playsinline muted></video>
     </div>
@@ -219,8 +284,11 @@
         const authError = document.getElementById('authError');
         const fsBtn = document.getElementById('fsBtn');
         const kbdBtn = document.getElementById('kbdBtn');
-        const quickKeys = document.getElementById('quickKeys');
-        const mobileInput = document.getElementById('mobileInput');
+        const virtualKeyboard = document.getElementById('virtualKeyboard');
+        const directTextInput = document.getElementById('directTextInput');
+        const sendDirectTextBtn = document.getElementById('sendDirectTextBtn');
+        const langSwitchBtn = document.getElementById('langSwitchBtn');
+        const closeKbdBtn = document.getElementById('closeKbdBtn');
         let pc, inputChannel, ws;
 
         const iceConfig = {
@@ -268,94 +336,237 @@
             fsBtn.textContent = document.webkitFullscreenElement ? "🗗 Оконный режим" : "⛶ На весь экран";
         });
 
-        // Переключение экранной клавиатуры на телефонах / планшетах
-        let isKeyboardOpen = false;
-        kbdBtn.addEventListener('click', (e) => {
-            e.stopPropagation();
-            isKeyboardOpen = !isKeyboardOpen;
-            quickKeys.style.display = isKeyboardOpen ? 'flex' : 'none';
-            kbdBtn.style.background = isKeyboardOpen ? '#1976d2' : '';
-            if (isKeyboardOpen) {
-                mobileInput.focus();
-            } else {
-                mobileInput.blur();
+        // Клавиатура: Переключение видимости
+        let isKbdVisible = false;
+        function setKbdVisible(show) {
+            isKbdVisible = show;
+            virtualKeyboard.style.display = show ? 'flex' : 'none';
+            kbdBtn.style.background = show ? '#1976d2' : '';
+        }
+        kbdBtn.addEventListener('click', () => setKbdVisible(!isKbdVisible));
+        closeKbdBtn.addEventListener('click', () => setKbdVisible(false));
+
+        // Ввод прямого текста (с мобильной клавиатуры)
+        function sendDirectText() {
+            const text = directTextInput.value;
+            if (text) {
+                sendInput({ t: "char", str: text });
+                directTextInput.value = "";
+            }
+        }
+        sendDirectTextBtn.addEventListener('click', sendDirectText);
+        directTextInput.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') {
+                e.preventDefault();
+                sendDirectText();
             }
         });
 
-        // Быстрые клавиши (Esc, Tab, Win, Backspace, Enter)
-        document.querySelectorAll('.qk-btn').forEach(btn => {
-            btn.addEventListener('click', (e) => {
-                e.stopPropagation();
-                const key = btn.getAttribute('data-key');
-                sendInput({ t: "kd", key: key, code: key });
-                sendInput({ t: "ku", key: key, code: key });
-                if (isKeyboardOpen) {
-                    mobileInput.focus();
-                }
-            });
-        });
+        // Модель виртуальной клавиатуры
+        let currentLang = 'ru'; // 'ru' или 'en'
+        let isShiftActive = false;
+        let isCapsLockActive = false;
+        let activeModifiers = { Control: false, Alt: false, Meta: false };
 
-        // Обработка ввода текста на мобильных устройствах
-        mobileInput.addEventListener('beforeinput', (e) => {
-            if (e.inputType === 'deleteContentBackward') {
-                sendInput({ t: "kd", key: "Backspace", code: "Backspace" });
-                sendInput({ t: "ku", key: "Backspace", code: "Backspace" });
-            } else if (e.inputType === 'insertLineBreak') {
-                sendInput({ t: "kd", key: "Enter", code: "Enter" });
-                sendInput({ t: "ku", key: "Enter", code: "Enter" });
-            } else if (e.data) {
-                sendInput({ t: "char", str: e.data });
+        const kbLayout = {
+            en: {
+                row1: [
+                    { label: "Esc", code: "Escape", cls: "fn-key" },
+                    { label: "1", code: "Digit1" }, { label: "2", code: "Digit2" }, { label: "3", code: "Digit3" },
+                    { label: "4", code: "Digit4" }, { label: "5", code: "Digit5" }, { label: "6", code: "Digit6" },
+                    { label: "7", code: "Digit7" }, { label: "8", code: "Digit8" }, { label: "9", code: "Digit9" },
+                    { label: "0", code: "Digit0" }, { label: "-", code: "Minus" }, { label: "=", code: "Equal" },
+                    { label: "⌫", code: "Backspace", cls: "wide-15 fn-key" }
+                ],
+                row2: [
+                    { label: "Tab", code: "Tab", cls: "fn-key" },
+                    { label: "q", code: "KeyQ" }, { label: "w", code: "KeyW" }, { label: "e", code: "KeyE" },
+                    { label: "r", code: "KeyR" }, { label: "t", code: "KeyT" }, { label: "y", code: "KeyY" },
+                    { label: "u", code: "KeyU" }, { label: "i", code: "KeyI" }, { label: "o", code: "KeyO" },
+                    { label: "p", code: "KeyP" }, { label: "[", code: "BracketLeft" }, { label: "]", code: "BracketRight" }
+                ],
+                row3: [
+                    { label: "Caps", code: "CapsLock", cls: "fn-key" },
+                    { label: "a", code: "KeyA" }, { label: "s", code: "KeyS" }, { label: "d", code: "KeyD" },
+                    { label: "f", code: "KeyF" }, { label: "g", code: "KeyG" }, { label: "h", code: "KeyH" },
+                    { label: "j", code: "KeyJ" }, { label: "k", code: "KeyK" }, { label: "l", code: "KeyL" },
+                    { label: ";", code: "Semicolon" }, { label: "'", code: "Quote" },
+                    { label: "⏎", code: "Enter", cls: "wide-15 fn-key" }
+                ],
+                row4: [
+                    { label: "⇧", code: "ShiftLeft", cls: "wide-15 fn-key" },
+                    { label: "z", code: "KeyZ" }, { label: "x", code: "KeyX" }, { label: "c", code: "KeyC" },
+                    { label: "v", code: "KeyV" }, { label: "b", code: "KeyB" }, { label: "n", code: "KeyN" },
+                    { label: "m", code: "KeyM" }, { label: ",", code: "Comma" }, { label: ".", code: "Period" },
+                    { label: "/", code: "Slash" }, { label: "▲", code: "ArrowUp", cls: "fn-key" }
+                ],
+                row5: [
+                    { label: "Ctrl", code: "ControlLeft", cls: "fn-key" },
+                    { label: "Win", code: "MetaLeft", cls: "fn-key" },
+                    { label: "Alt", code: "AltLeft", cls: "fn-key" },
+                    { label: "Пробел", code: "Space", cls: "wide-space" },
+                    { label: "◄", code: "ArrowLeft", cls: "fn-key" },
+                    { label: "▼", code: "ArrowDown", cls: "fn-key" },
+                    { label: "►", code: "ArrowRight", cls: "fn-key" }
+                ]
+            },
+            ru: {
+                row1: [
+                    { label: "Esc", code: "Escape", cls: "fn-key" },
+                    { label: "1", code: "Digit1" }, { label: "2", code: "Digit2" }, { label: "3", code: "Digit3" },
+                    { label: "4", code: "Digit4" }, { label: "5", code: "Digit5" }, { label: "6", code: "Digit6" },
+                    { label: "7", code: "Digit7" }, { label: "8", code: "Digit8" }, { label: "9", code: "Digit9" },
+                    { label: "0", code: "Digit0" }, { label: "-", code: "Minus" }, { label: "=", code: "Equal" },
+                    { label: "⌫", code: "Backspace", cls: "wide-15 fn-key" }
+                ],
+                row2: [
+                    { label: "Tab", code: "Tab", cls: "fn-key" },
+                    { label: "й", code: "KeyQ" }, { label: "ц", code: "KeyW" }, { label: "у", code: "KeyE" },
+                    { label: "к", code: "KeyR" }, { label: "е", code: "KeyT" }, { label: "н", code: "KeyY" },
+                    { label: "г", code: "KeyU" }, { label: "ш", code: "KeyI" }, { label: "щ", code: "KeyO" },
+                    { label: "з", code: "KeyP" }, { label: "х", code: "BracketLeft" }, { label: "ъ", code: "BracketRight" }
+                ],
+                row3: [
+                    { label: "Caps", code: "CapsLock", cls: "fn-key" },
+                    { label: "ф", code: "KeyA" }, { label: "ы", code: "KeyS" }, { label: "в", code: "KeyD" },
+                    { label: "а", code: "KeyF" }, { label: "п", code: "KeyG" }, { label: "р", code: "KeyH" },
+                    { label: "о", code: "KeyJ" }, { label: "л", code: "KeyK" }, { label: "д", code: "KeyL" },
+                    { label: "ж", code: "Semicolon" }, { label: "э", code: "Quote" },
+                    { label: "⏎", code: "Enter", cls: "wide-15 fn-key" }
+                ],
+                row4: [
+                    { label: "⇧", code: "ShiftLeft", cls: "wide-15 fn-key" },
+                    { label: "я", code: "KeyZ" }, { label: "ч", code: "KeyX" }, { label: "с", code: "KeyC" },
+                    { label: "м", code: "KeyV" }, { label: "и", code: "KeyB" }, { label: "т", code: "KeyN" },
+                    { label: "ь", code: "KeyM" }, { label: "б", code: "Comma" }, { label: "ю", code: "Period" },
+                    { label: ".", code: "Slash" }, { label: "▲", code: "ArrowUp", cls: "fn-key" }
+                ],
+                row5: [
+                    { label: "Ctrl", code: "ControlLeft", cls: "fn-key" },
+                    { label: "Win", code: "MetaLeft", cls: "fn-key" },
+                    { label: "Alt", code: "AltLeft", cls: "fn-key" },
+                    { label: "Пробел", code: "Space", cls: "wide-space" },
+                    { label: "◄", code: "ArrowLeft", cls: "fn-key" },
+                    { label: "▼", code: "ArrowDown", cls: "fn-key" },
+                    { label: "►", code: "ArrowRight", cls: "fn-key" }
+                ]
             }
-        });
+        };
 
-        mobileInput.addEventListener('input', () => {
-            mobileInput.value = "";
-        });
+        function renderVirtualKeyboard() {
+            const layout = kbLayout[currentLang];
+            const isUpper = (isShiftActive && !isCapsLockActive) || (!isShiftActive && isCapsLockActive);
 
-        mobileInput.addEventListener('keydown', (e) => {
-            if (e.key === 'Backspace' || e.key === 'Enter') {
-                sendInput({ t: "kd", key: e.key, code: e.code });
-                sendInput({ t: "ku", key: e.key, code: e.code });
+            for (let i = 1; i <= 5; i++) {
+                const rowElem = document.getElementById('kbRow' + i);
+                rowElem.innerHTML = '';
+                layout['row' + i].forEach(k => {
+                    const btn = document.createElement('button');
+                    btn.type = 'button';
+                    btn.className = 'kb-key ' + (k.cls || '');
+
+                    let displayLabel = k.label;
+                    if (displayLabel.length === 1 && /[a-zа-я]/i.test(displayLabel)) {
+                        displayLabel = isUpper ? displayLabel.toUpperCase() : displayLabel.toLowerCase();
+                    }
+                    btn.textContent = displayLabel;
+
+                    // Подсветка модификаторов
+                    if (k.code === 'ShiftLeft' && isShiftActive) btn.classList.add('active-mod');
+                    if (k.code === 'CapsLock' && isCapsLockActive) btn.classList.add('active-mod');
+                    if (k.code === 'ControlLeft' && activeModifiers.Control) btn.classList.add('active-mod');
+                    if (k.code === 'AltLeft' && activeModifiers.Alt) btn.classList.add('active-mod');
+                    if (k.code === 'MetaLeft' && activeModifiers.Meta) btn.classList.add('active-mod');
+
+                    btn.addEventListener('click', (e) => {
+                        e.stopPropagation();
+                        handleVirtualKeyPress(k);
+                    });
+
+                    rowElem.appendChild(btn);
+                });
             }
+            langSwitchBtn.textContent = currentLang === 'ru' ? '🌐 RU' : '🌐 EN';
+        }
+
+        langSwitchBtn.addEventListener('click', () => {
+            currentLang = currentLang === 'ru' ? 'en' : 'ru';
+            renderVirtualKeyboard();
         });
 
-        // Обработка клавиатуры на ПК (физическая клавиатура)
-        const specialKeys = [
-            "Backspace", "Tab", "Enter", "Shift", "Control", "Alt", "Pause",
-            "CapsLock", "Escape", "PageUp", "PageDown", "End", "Home",
-            "ArrowLeft", "ArrowUp", "ArrowRight", "ArrowDown", "PrintScreen",
-            "Insert", "Delete", "Meta", "F1", "F2", "F3", "F4", "F5", "F6",
-            "F7", "F8", "F9", "F10", "F11", "F12"
-        ];
+        function handleVirtualKeyPress(k) {
+            // Обработка модификаторов
+            if (k.code === 'ShiftLeft') {
+                isShiftActive = !isShiftActive;
+                sendInput({ t: isShiftActive ? "kd" : "ku", code: "ShiftLeft", key: "Shift" });
+                renderVirtualKeyboard();
+                return;
+            }
+            if (k.code === 'CapsLock') {
+                isCapsLockActive = !isCapsLockActive;
+                sendInput({ t: "kd", code: "CapsLock", key: "CapsLock" });
+                sendInput({ t: "ku", code: "CapsLock", key: "CapsLock" });
+                renderVirtualKeyboard();
+                return;
+            }
+            if (k.code === 'ControlLeft') {
+                activeModifiers.Control = !activeModifiers.Control;
+                sendInput({ t: activeModifiers.Control ? "kd" : "ku", code: "ControlLeft", key: "Control" });
+                renderVirtualKeyboard();
+                return;
+            }
+            if (k.code === 'AltLeft') {
+                activeModifiers.Alt = !activeModifiers.Alt;
+                sendInput({ t: activeModifiers.Alt ? "kd" : "ku", code: "AltLeft", key: "Alt" });
+                renderVirtualKeyboard();
+                return;
+            }
+            if (k.code === 'MetaLeft') {
+                activeModifiers.Meta = !activeModifiers.Meta;
+                sendInput({ t: activeModifiers.Meta ? "kd" : "ku", code: "MetaLeft", key: "Meta" });
+                renderVirtualKeyboard();
+                return;
+            }
 
+            // Обычные клавиши
+            sendInput({ t: "kd", code: k.code, key: k.label });
+            setTimeout(() => {
+                sendInput({ t: "ku", code: k.code, key: k.label });
+            }, 30);
+
+            // Сброс временного Shift после ввода одной буквы
+            if (isShiftActive) {
+                isShiftActive = false;
+                sendInput({ t: "ku", code: "ShiftLeft", key: "Shift" });
+                renderVirtualKeyboard();
+            }
+            // Сброс модификаторов после комбинации
+            if (activeModifiers.Control || activeModifiers.Alt || activeModifiers.Meta) {
+                if (activeModifiers.Control) sendInput({ t: "ku", code: "ControlLeft", key: "Control" });
+                if (activeModifiers.Alt) sendInput({ t: "ku", code: "AltLeft", key: "Alt" });
+                if (activeModifiers.Meta) sendInput({ t: "ku", code: "MetaLeft", key: "Meta" });
+                activeModifiers.Control = false;
+                activeModifiers.Alt = false;
+                activeModifiers.Meta = false;
+                renderVirtualKeyboard();
+            }
+        }
+        renderVirtualKeyboard();
+
+        // Физическая клавиатура (ПК / ноутбук) - поддержка ВСЕХ клавиш
         window.addEventListener('keydown', (e) => {
             if (authModal.style.display !== 'none') return;
-            if (e.target === pinInput) return;
-            if (document.activeElement === mobileInput) return;
+            if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
 
-            if (specialKeys.includes(e.key)) {
-                e.preventDefault();
-                sendInput({ t: "kd", key: e.key, code: e.code });
-                return;
-            }
-
-            if (e.ctrlKey || e.altKey || e.metaKey) {
-                e.preventDefault();
-                sendInput({ t: "kd", key: e.key, code: e.code });
-                return;
-            }
-
-            if (e.key.length === 1) {
-                e.preventDefault();
-                sendInput({ t: "char", str: e.key });
-            }
+            e.preventDefault();
+            sendInput({ t: "kd", key: e.key, code: e.code });
         });
 
         window.addEventListener('keyup', (e) => {
             if (authModal.style.display !== 'none') return;
-            if (e.target === pinInput) return;
-            if (document.activeElement === mobileInput) return;
+            if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
 
+            e.preventDefault();
             sendInput({ t: "ku", key: e.key, code: e.code });
         });
 
