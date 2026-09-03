@@ -5,18 +5,39 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
     <title>DeskRemote Stream</title>
     <style>
-        * { box-sizing: border-box; }
-        body, html {
+        :root {
+            --bg-base: #090d16;
+            --surface-glass: rgba(17, 24, 39, 0.78);
+            --surface-glass-border: rgba(255, 255, 255, 0.12);
+            --surface-glass-hover: rgba(30, 41, 59, 0.85);
+            --primary: #0284c7;
+            --primary-glow: #38bdf8;
+            --primary-gradient: linear-gradient(135deg, #0284c7 0%, #2563eb 100%);
+            --accent-green: #10b981;
+            --accent-red: #f43f5e;
+            --accent-amber: #f59e0b;
+            --text-main: #f8fafc;
+            --text-muted: #94a3b8;
+            --font-sans: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+        }
+
+        * {
+            box-sizing: border-box;
             margin: 0;
             padding: 0;
+            -webkit-tap-highlight-color: transparent;
+        }
+
+        body, html {
             width: 100%;
             height: 100%;
-            background: #000;
+            background: var(--bg-base);
             overflow: hidden;
-            font-family: system-ui, -apple-system, sans-serif;
-            -webkit-tap-highlight-color: transparent;
+            font-family: var(--font-sans);
             user-select: none;
+            color: var(--text-main);
         }
+
         #container {
             position: relative;
             width: 100vw;
@@ -24,250 +45,563 @@
             display: flex;
             align-items: center;
             justify-content: center;
-            background: #000;
+            background: radial-gradient(circle at center, #111827 0%, #030712 100%);
             touch-action: none;
         }
+
         video {
             width: 100%;
             height: 100%;
             object-fit: contain;
             cursor: crosshair;
-            background: #000;
+            background: transparent;
             touch-action: none;
         }
-        #statusOverlay {
-            position: absolute;
-            top: 12px;
-            left: 12px;
-            padding: 6px 14px;
-            background: rgba(0, 0, 0, 0.85);
-            color: #fff;
-            font-size: 13px;
-            border-radius: 6px;
-            pointer-events: none;
-            z-index: 10;
-            transition: opacity 0.5s;
-            border: 1px solid #333;
-        }
-        .connected { color: #4caf50 !important; border-color: #2e7d32 !important; }
 
-        #topControls {
+        /* ─── Плавающая панель управления (Top Dynamic Island Bar) ─── */
+        #topBar {
             position: absolute;
-            top: 12px;
-            right: 12px;
+            top: max(12px, env(safe-area-inset-top));
+            left: 50%;
+            transform: translateX(-50%);
             display: flex;
+            align-items: center;
             gap: 8px;
+            background: var(--surface-glass);
+            backdrop-filter: blur(16px);
+            -webkit-backdrop-filter: blur(16px);
+            border: 1px solid var(--surface-glass-border);
+            padding: 6px 10px;
+            border-radius: 9999px;
             z-index: 20;
-            opacity: 0.9;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.45);
+            transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+            max-width: calc(100vw - 24px);
         }
+
+        .status-pill {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 4px 10px;
+            font-size: 12px;
+            font-weight: 500;
+            color: var(--text-muted);
+            border-radius: 9999px;
+            background: rgba(0, 0, 0, 0.3);
+            white-space: nowrap;
+            max-width: 220px;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .status-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: var(--accent-amber);
+            box-shadow: 0 0 8px var(--accent-amber);
+            flex-shrink: 0;
+            transition: background 0.3s, box-shadow 0.3s;
+        }
+
+        .status-dot.connected {
+            background: var(--accent-green);
+            box-shadow: 0 0 10px var(--accent-green);
+            animation: pulse-green 2.5s infinite;
+        }
+
+        .status-dot.error {
+            background: var(--accent-red);
+            box-shadow: 0 0 10px var(--accent-red);
+        }
+
+        @keyframes pulse-green {
+            0%, 100% { opacity: 1; transform: scale(1); }
+            50% { opacity: 0.6; transform: scale(1.15); }
+        }
+
         .ctrl-btn {
-            background: rgba(30, 30, 30, 0.85);
-            border: 1px solid #555;
-            color: #fff;
-            padding: 8px 14px;
-            border-radius: 6px;
+            background: transparent;
+            border: 1px solid transparent;
+            color: var(--text-main);
+            padding: 6px 12px;
+            border-radius: 9999px;
             font-size: 13px;
+            font-weight: 500;
             cursor: pointer;
-            backdrop-filter: blur(4px);
             display: flex;
             align-items: center;
             gap: 6px;
-        }
-        .ctrl-btn:hover, .ctrl-btn:active {
-            background: #1976d2;
-            border-color: #1976d2;
+            transition: all 0.2s ease;
+            white-space: nowrap;
         }
 
-        /* Полная виртуальная клавиатура */
+        .ctrl-btn svg {
+            width: 16px;
+            height: 16px;
+            fill: none;
+            stroke: currentColor;
+            stroke-width: 2;
+            stroke-linecap: round;
+            stroke-linejoin: round;
+            flex-shrink: 0;
+        }
+
+        .ctrl-btn:hover {
+            background: var(--surface-glass-hover);
+            border-color: var(--surface-glass-border);
+            color: #fff;
+        }
+
+        .ctrl-btn:active {
+            transform: scale(0.96);
+        }
+
+        .ctrl-btn.active {
+            background: var(--primary-gradient);
+            border-color: var(--primary-glow);
+            box-shadow: 0 0 14px rgba(56, 189, 248, 0.4);
+            color: #fff;
+        }
+
+        .icon-only-btn {
+            padding: 6px 8px;
+        }
+
+        /* ─── Меню быстрых действий (Shortcuts Dropdown) ─── */
+        #quickMenu {
+            position: absolute;
+            top: calc(100% + 8px);
+            right: 0;
+            background: var(--surface-glass);
+            backdrop-filter: blur(20px);
+            -webkit-backdrop-filter: blur(20px);
+            border: 1px solid var(--surface-glass-border);
+            border-radius: 14px;
+            padding: 6px;
+            display: none;
+            flex-direction: column;
+            gap: 4px;
+            box-shadow: 0 12px 36px rgba(0, 0, 0, 0.6);
+            min-width: 170px;
+            z-index: 25;
+        }
+
+        #quickMenu.open {
+            display: flex;
+            animation: fadeInScale 0.2s ease-out;
+        }
+
+        .menu-item {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 8px 12px;
+            border-radius: 8px;
+            font-size: 13px;
+            font-weight: 500;
+            color: var(--text-main);
+            background: transparent;
+            border: none;
+            cursor: pointer;
+            text-align: left;
+            transition: all 0.15s ease;
+        }
+
+        .menu-item:hover {
+            background: rgba(255, 255, 255, 0.08);
+            color: #fff;
+        }
+
+        .menu-item kbd {
+            font-size: 11px;
+            padding: 2px 6px;
+            background: rgba(0, 0, 0, 0.4);
+            border: 1px solid rgba(255, 255, 255, 0.15);
+            border-radius: 4px;
+            color: var(--primary-glow);
+            font-family: monospace;
+        }
+
+        @keyframes fadeInScale {
+            from { opacity: 0; transform: scale(0.95) translateY(-6px); }
+            to { opacity: 1; transform: scale(1) translateY(0); }
+        }
+
+        /* ─── Полная виртуальная клавиатура ─── */
         #virtualKeyboard {
             position: absolute;
             bottom: 0;
             left: 0;
             right: 0;
-            background: rgba(18, 18, 18, 0.95);
-            border-top: 1px solid #444;
-            backdrop-filter: blur(12px);
-            padding: 8px 6px calc(8px + env(safe-area-inset-bottom));
+            background: rgba(11, 17, 32, 0.88);
+            border-top: 1px solid var(--surface-glass-border);
+            backdrop-filter: blur(24px);
+            -webkit-backdrop-filter: blur(24px);
+            padding: 10px 8px calc(10px + env(safe-area-inset-bottom));
             z-index: 30;
             display: none;
             flex-direction: column;
-            gap: 5px;
-            box-shadow: 0 -6px 24px rgba(0,0,0,0.7);
+            gap: 6px;
+            box-shadow: 0 -10px 40px rgba(0, 0, 0, 0.7);
+            animation: slideUp 0.25s cubic-bezier(0.16, 1, 0.3, 1);
         }
+
+        @keyframes slideUp {
+            from { transform: translateY(100%); }
+            to { transform: translateY(0); }
+        }
+
         .kb-input-bar {
             display: flex;
             gap: 6px;
             margin-bottom: 4px;
         }
+
         .kb-input-bar input {
             flex: 1;
-            padding: 8px 12px;
-            background: #2b2b2b;
-            border: 1px solid #555;
-            border-radius: 6px;
+            padding: 10px 14px;
+            background: rgba(30, 41, 59, 0.7);
+            border: 1px solid var(--surface-glass-border);
+            border-radius: 10px;
             color: #fff;
             font-size: 14px;
             outline: none;
             user-select: text;
+            transition: all 0.2s ease;
         }
+
         .kb-input-bar input:focus {
-            border-color: #1976d2;
+            border-color: var(--primary-glow);
+            box-shadow: 0 0 10px rgba(56, 189, 248, 0.3);
+            background: rgba(30, 41, 59, 0.95);
         }
+
         .kb-input-bar button {
-            background: #1976d2;
+            background: var(--primary-gradient);
             color: #fff;
             border: none;
-            border-radius: 6px;
-            padding: 0 14px;
+            border-radius: 10px;
+            padding: 0 16px;
             font-size: 13px;
             font-weight: 600;
             cursor: pointer;
             white-space: nowrap;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            box-shadow: 0 4px 12px rgba(2, 132, 199, 0.3);
+            transition: all 0.15s ease;
         }
+
+        .kb-input-bar button:active {
+            transform: scale(0.97);
+        }
+
         .kb-row {
             display: flex;
             gap: 4px;
             justify-content: center;
             width: 100%;
         }
+
         .kb-key {
             flex: 1;
             min-width: 0;
-            height: 38px;
-            background: #2e2e2e;
-            color: #eee;
-            border: 1px solid #444;
-            border-radius: 5px;
-            font-size: 13px;
-            font-weight: 600;
+            height: 40px;
+            background: rgba(30, 41, 59, 0.65);
+            color: #f1f5f9;
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            border-radius: 7px;
+            font-size: 14px;
+            font-weight: 500;
             display: flex;
             align-items: center;
             justify-content: center;
             cursor: pointer;
             touch-action: manipulation;
-            box-shadow: 0 2px 4px rgba(0,0,0,0.3);
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
+            transition: all 0.1s ease;
         }
+
         .kb-key:active {
-            background: #1976d2 !important;
-            border-color: #1976d2 !important;
-            transform: translateY(1px);
+            background: var(--primary) !important;
+            border-color: var(--primary-glow) !important;
+            color: #fff !important;
+            transform: translateY(1px) scale(0.97);
         }
+
         .kb-key.active-mod {
-            background: #0d47a1 !important;
-            border-color: #42a5f5 !important;
-            color: #fff;
+            background: rgba(14, 165, 233, 0.35) !important;
+            border-color: var(--primary-glow) !important;
+            color: #38bdf8 !important;
+            box-shadow: 0 0 12px rgba(56, 189, 248, 0.45);
         }
+
         .kb-key.wide-15 { flex: 1.5; }
         .kb-key.wide-2 { flex: 2; }
         .kb-key.wide-space { flex: 4; }
         .kb-key.fn-key {
-            background: #222;
-            color: #bbb;
-            font-size: 11px;
+            background: rgba(15, 23, 42, 0.75);
+            color: var(--text-muted);
+            font-size: 12px;
         }
 
+        /* ─── Экран авторизации (Auth Modal) ─── */
         #authModal {
             position: fixed;
             inset: 0;
-            background: rgba(0, 0, 0, 0.92);
+            background: rgba(3, 7, 18, 0.82);
+            backdrop-filter: blur(24px);
+            -webkit-backdrop-filter: blur(24px);
             display: flex;
             align-items: center;
             justify-content: center;
             z-index: 100;
             padding: 16px;
         }
+
         .auth-card {
-            background: #1e1e1e;
-            border: 1px solid #333;
-            padding: 24px;
-            border-radius: 12px;
+            background: rgba(17, 24, 39, 0.85);
+            border: 1px solid var(--surface-glass-border);
+            padding: 32px 28px;
+            border-radius: 20px;
             width: 100%;
-            max-width: 320px;
+            max-width: 340px;
             text-align: center;
-            box-shadow: 0 8px 24px rgba(0,0,0,0.6);
+            box-shadow: 0 20px 50px rgba(0, 0, 0, 0.65), 0 0 20px rgba(2, 132, 199, 0.15);
+            position: relative;
+            overflow: hidden;
+            animation: fadeInScale 0.3s cubic-bezier(0.16, 1, 0.3, 1);
         }
+
+        .auth-card::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 2px;
+            background: var(--primary-gradient);
+        }
+
+        .app-logo {
+            width: 56px;
+            height: 56px;
+            margin: 0 auto 16px;
+            background: rgba(2, 132, 199, 0.15);
+            border: 1px solid rgba(56, 189, 248, 0.25);
+            border-radius: 16px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            box-shadow: 0 0 20px rgba(2, 132, 199, 0.2);
+        }
+
+        .app-logo svg {
+            width: 28px;
+            height: 28px;
+            stroke: var(--primary-glow);
+            fill: none;
+            stroke-width: 2;
+            stroke-linecap: round;
+            stroke-linejoin: round;
+        }
+
         .auth-card h3 {
-            margin: 0 0 16px 0;
+            margin: 0 0 6px 0;
             color: #fff;
-            font-size: 18px;
+            font-size: 22px;
+            font-weight: 700;
+            letter-spacing: -0.02em;
         }
+
+        .auth-card h3 span {
+            background: linear-gradient(135deg, #38bdf8 0%, #3b82f6 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        .auth-card p {
+            margin: 0 0 22px 0;
+            color: var(--text-muted);
+            font-size: 13px;
+        }
+
+        .pin-wrapper {
+            position: relative;
+            margin-bottom: 16px;
+        }
+
         .auth-card input {
             width: 100%;
-            padding: 14px;
-            background: #2b2b2b;
-            border: 1px solid #444;
-            border-radius: 8px;
+            padding: 14px 16px;
+            background: rgba(30, 41, 59, 0.7);
+            border: 1px solid var(--surface-glass-border);
+            border-radius: 12px;
             color: #fff;
-            font-size: 20px;
+            font-size: 22px;
+            font-weight: 600;
             text-align: center;
-            letter-spacing: 4px;
-            margin-bottom: 14px;
+            letter-spacing: 6px;
             outline: none;
             -webkit-appearance: none;
             user-select: text;
+            transition: all 0.2s ease;
         }
+
         .auth-card input:focus {
-            border-color: #1976d2;
+            border-color: var(--primary-glow);
+            box-shadow: 0 0 16px rgba(56, 189, 248, 0.3);
+            background: rgba(30, 41, 59, 0.95);
         }
+
         .auth-card button {
             width: 100%;
             padding: 14px;
-            background: #1976d2;
+            background: var(--primary-gradient);
             border: none;
-            border-radius: 8px;
+            border-radius: 12px;
             color: #fff;
-            font-size: 16px;
+            font-size: 15px;
             font-weight: 600;
             cursor: pointer;
             -webkit-appearance: none;
+            box-shadow: 0 6px 18px rgba(2, 132, 199, 0.35);
+            transition: all 0.2s ease;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
         }
-        .auth-card button:hover, .auth-card button:active {
-            background: #1565c0;
+
+        .auth-card button:hover {
+            box-shadow: 0 8px 24px rgba(2, 132, 199, 0.5);
+            transform: translateY(-1px);
         }
+
+        .auth-card button:active {
+            transform: translateY(0) scale(0.98);
+        }
+
+        .auth-card button:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+            transform: none;
+        }
+
         #authError {
-            color: #f44336;
+            color: var(--accent-red);
             font-size: 13px;
-            margin-top: 10px;
+            margin-top: 12px;
             min-height: 18px;
             line-height: 1.4;
+            font-weight: 500;
+        }
+
+        .shake {
+            animation: shake 0.4s ease-in-out;
+        }
+
+        @keyframes shake {
+            0%, 100% { transform: translateX(0); }
+            20%, 60% { transform: translateX(-8px); }
+            40%, 80% { transform: translateX(8px); }
+        }
+
+        /* ─── Визуальный отклик касания (Touch / Click Ripple) ─── */
+        .touch-ripple {
+            position: absolute;
+            width: 32px;
+            height: 32px;
+            border-radius: 50%;
+            border: 2px solid var(--primary-glow);
+            background: rgba(56, 189, 248, 0.2);
+            pointer-events: none;
+            transform: translate(-50%, -50%) scale(0.5);
+            animation: rippleAnim 0.35s ease-out forwards;
+            z-index: 15;
+        }
+
+        @keyframes rippleAnim {
+            0% { transform: translate(-50%, -50%) scale(0.4); opacity: 1; }
+            100% { transform: translate(-50%, -50%) scale(1.6); opacity: 0; }
         }
     </style>
 </head>
 <body>
+    <!-- Модальное окно авторизации -->
     <div id="authModal">
         <form id="authForm" class="auth-card" onsubmit="return false;">
-            <h3>Доступ к ПК</h3>
-            <input type="password" id="pinInput" placeholder="Введите PIN" maxlength="16" inputmode="numeric" pattern="[0-9]*" autofocus autocomplete="current-password">
-            <button type="submit" id="loginBtn">Войти</button>
+            <div class="app-logo">
+                <svg viewBox="0 0 24 24">
+                    <rect x="2" y="3" width="20" height="14" rx="2"></rect>
+                    <line x1="8" y1="21" x2="16" y2="21"></line>
+                    <line x1="12" y1="17" x2="12" y2="21"></line>
+                </svg>
+            </div>
+            <h3>Desk<span>Remote</span></h3>
+            <p>Удаленное управление рабочим столом</p>
+            <div class="pin-wrapper">
+                <input type="password" id="pinInput" placeholder="••••" maxlength="16" inputmode="numeric" pattern="[0-9]*" autofocus autocomplete="current-password">
+            </div>
+            <button type="submit" id="loginBtn">Подключиться</button>
             <div id="authError"></div>
         </form>
     </div>
 
+    <!-- Основной контейнер трансляции -->
     <div id="container">
-        <div id="statusOverlay">Ожидание ввода PIN...</div>
-        <div id="topControls">
-            <button type="button" id="kbdBtn" class="ctrl-btn" title="Вызов экранной клавиатуры">⌨ Клавиатура</button>
-            <button type="button" id="fsBtn" class="ctrl-btn" title="Развернуть / Свернуть">⛶ На весь экран</button>
+        <!-- Верхняя плавающая панель (Dynamic Island) -->
+        <div id="topBar">
+            <div class="status-pill" id="statusContainer" title="Статус подключения">
+                <div class="status-dot" id="statusDot"></div>
+                <span id="statusOverlay">Ожидание PIN...</span>
+            </div>
+
+            <button type="button" id="kbdBtn" class="ctrl-btn" title="Вызов экранной клавиатуры">
+                <svg viewBox="0 0 24 24"><rect x="2" y="4" width="20" height="16" rx="2"></rect><line x1="6" y1="8" x2="6.01" y2="8"></line><line x1="10" y1="8" x2="10.01" y2="8"></line><line x1="14" y1="8" x2="14.01" y2="8"></line><line x1="18" y1="8" x2="18.01" y2="8"></line><line x1="6" y1="12" x2="6.01" y2="12"></line><line x1="18" y1="12" x2="18.01" y2="12"></line><line x1="9" y1="16" x2="15" y2="16"></line></svg>
+                <span>Клавиатура</span>
+            </button>
+
+            <!-- Кнопка выпадающего меню шорткатов -->
+            <div style="position: relative;">
+                <button type="button" id="quickMenuBtn" class="ctrl-btn icon-only-btn" title="Быстрые клавиши">
+                    <svg viewBox="0 0 24 24"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"></path></svg>
+                </button>
+                <div id="quickMenu">
+                    <button type="button" class="menu-item" data-action="copy"><span>Копировать</span><kbd>Ctrl+C</kbd></button>
+                    <button type="button" class="menu-item" data-action="paste"><span>Вставить</span><kbd>Ctrl+V</kbd></button>
+                    <button type="button" class="menu-item" data-action="alttab"><span>Сменить окно</span><kbd>Alt+Tab</kbd></button>
+                    <button type="button" class="menu-item" data-action="desktop"><span>Рабочий стол</span><kbd>Win+D</kbd></button>
+                    <button type="button" class="menu-item" data-action="taskmgr"><span>Диспетчер</span><kbd>Ctrl+Shift+Esc</kbd></button>
+                </div>
+            </div>
+
+            <button type="button" id="fsBtn" class="ctrl-btn icon-only-btn" title="Полноэкранный режим">
+                <svg id="fsIcon" viewBox="0 0 24 24"><path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"></path></svg>
+            </button>
+
+            <button type="button" id="logoutBtn" class="ctrl-btn icon-only-btn" title="Отключиться и сменить PIN">
+                <svg viewBox="0 0 24 24"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path><polyline points="16 17 21 12 16 7"></polyline><line x1="21" y1="12" x2="9" y2="12"></line></svg>
+            </button>
         </div>
 
         <!-- Полная экранная клавиатура -->
         <div id="virtualKeyboard">
             <div class="kb-input-bar">
-                <input type="text" id="directTextInput" placeholder="Ввести текст с телефона...">
-                <button type="button" id="sendDirectTextBtn">Ввести ⏎</button>
-                <button type="button" id="langSwitchBtn" style="background:#37474f;">🌐 RU</button>
-                <button type="button" id="closeKbdBtn" style="background:#424242; padding:0 10px;">✕</button>
+                <input type="text" id="directTextInput" placeholder="Быстрый ввод текста с мобильного...">
+                <button type="button" id="sendDirectTextBtn">Вставить ⏎</button>
+                <button type="button" id="langSwitchBtn" style="background: rgba(30, 41, 59, 0.85);">🌐 RU</button>
+                <button type="button" id="closeKbdBtn" style="background: rgba(51, 65, 85, 0.85); padding: 0 12px;">✕</button>
             </div>
 
-            <!-- Ряд 1: Esc, 1..0, -, =, Backspace -->
+            <!-- Ряды клавиш -->
             <div class="kb-row" id="kbRow1"></div>
-            <!-- Ряд 2: Tab, Q..P, [, ] -->
             <div class="kb-row" id="kbRow2"></div>
-            <!-- Ряд 3: Caps, A..L, ;, ', Enter -->
             <div class="kb-row" id="kbRow3"></div>
-            <!-- Ряд 4: Shift, Z..M, ,, ., /, ▲ -->
             <div class="kb-row" id="kbRow4"></div>
-            <!-- Ряд 5: Ctrl, Win, Alt, Пробел, ◄, ▼, ► -->
             <div class="kb-row" id="kbRow5"></div>
         </div>
 
@@ -277,13 +611,18 @@
     <script>
         const video = document.getElementById('remoteVideo');
         const statusOverlay = document.getElementById('statusOverlay');
+        const statusDot = document.getElementById('statusDot');
         const authModal = document.getElementById('authModal');
         const authForm = document.getElementById('authForm');
         const pinInput = document.getElementById('pinInput');
         const loginBtn = document.getElementById('loginBtn');
         const authError = document.getElementById('authError');
         const fsBtn = document.getElementById('fsBtn');
+        const fsIcon = document.getElementById('fsIcon');
         const kbdBtn = document.getElementById('kbdBtn');
+        const quickMenuBtn = document.getElementById('quickMenuBtn');
+        const quickMenu = document.getElementById('quickMenu');
+        const logoutBtn = document.getElementById('logoutBtn');
         const virtualKeyboard = document.getElementById('virtualKeyboard');
         const directTextInput = document.getElementById('directTextInput');
         const sendDirectTextBtn = document.getElementById('sendDirectTextBtn');
@@ -310,6 +649,7 @@
             try { localStorage.removeItem(key); } catch (e) {}
         }
 
+        // Полноэкранный режим
         function toggleFullScreen() {
             try {
                 if (!document.fullscreenElement && !document.webkitFullscreenElement) {
@@ -328,12 +668,71 @@
             } catch (e) {}
         }
 
+        function updateFsIcon() {
+            const isFs = !!(document.fullscreenElement || document.webkitFullscreenElement);
+            if (isFs) {
+                fsIcon.innerHTML = '<path d="M8 3v3a2 2 0 0 1-2 2H3m18 0h-3a2 2 0 0 1-2-2V3m0 18v-3a2 2 0 0 1 2-2h3M3 16h3a2 2 0 0 1 2 2v3"></path>';
+            } else {
+                fsIcon.innerHTML = '<path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"></path>';
+            }
+        }
+
         fsBtn.addEventListener('click', toggleFullScreen);
-        document.addEventListener('fullscreenchange', () => {
-            fsBtn.textContent = document.fullscreenElement ? "🗗 Оконный режим" : "⛶ На весь экран";
+        document.addEventListener('fullscreenchange', updateFsIcon);
+        document.addEventListener('webkitfullscreenchange', updateFsIcon);
+
+        // Меню шорткатов
+        quickMenuBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            quickMenu.classList.toggle('open');
         });
-        document.addEventListener('webkitfullscreenchange', () => {
-            fsBtn.textContent = document.webkitFullscreenElement ? "🗗 Оконный режим" : "⛶ На весь экран";
+        document.addEventListener('click', () => quickMenu.classList.remove('open'));
+
+        quickMenu.querySelectorAll('.menu-item').forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                const action = btn.getAttribute('data-action');
+                triggerShortcut(action);
+                quickMenu.classList.remove('open');
+            });
+        });
+
+        function triggerShortcut(action) {
+            switch (action) {
+                case 'copy':
+                    sendCombo(["ControlLeft", "KeyC"]);
+                    break;
+                case 'paste':
+                    sendCombo(["ControlLeft", "KeyV"]);
+                    break;
+                case 'alttab':
+                    sendCombo(["AltLeft", "Tab"]);
+                    break;
+                case 'desktop':
+                    sendCombo(["MetaLeft", "KeyD"]);
+                    break;
+                case 'taskmgr':
+                    sendCombo(["ControlLeft", "ShiftLeft", "Escape"]);
+                    break;
+            }
+        }
+
+        function sendCombo(codes) {
+            codes.forEach(c => sendInput({ t: "kd", code: c }));
+            setTimeout(() => {
+                codes.slice().reverse().forEach(c => sendInput({ t: "ku", code: c }));
+            }, 50);
+        }
+
+        // Отключение / Logout
+        logoutBtn.addEventListener('click', () => {
+            safeStorageRemove('deskremote_pin');
+            if (ws) ws.close();
+            if (pc) pc.close();
+            authModal.style.display = 'flex';
+            pinInput.value = '';
+            pinInput.focus();
+            setStatus("Отключено");
         });
 
         // Клавиатура: Переключение видимости
@@ -341,7 +740,7 @@
         function setKbdVisible(show) {
             isKbdVisible = show;
             virtualKeyboard.style.display = show ? 'flex' : 'none';
-            kbdBtn.style.background = show ? '#1976d2' : '';
+            kbdBtn.classList.toggle('active', show);
         }
         kbdBtn.addEventListener('click', () => setKbdVisible(!isKbdVisible));
         closeKbdBtn.addEventListener('click', () => setKbdVisible(false));
@@ -362,8 +761,8 @@
             }
         });
 
-        // Модель виртуальной клавиатуры
-        let currentLang = 'ru'; // 'ru' или 'en'
+        // Модель клавиатуры
+        let currentLang = 'ru';
         let isShiftActive = false;
         let isCapsLockActive = false;
         let activeModifiers = { Control: false, Alt: false, Meta: false };
@@ -471,7 +870,6 @@
                     }
                     btn.textContent = displayLabel;
 
-                    // Подсветка модификаторов
                     if (k.code === 'ShiftLeft' && isShiftActive) btn.classList.add('active-mod');
                     if (k.code === 'CapsLock' && isCapsLockActive) btn.classList.add('active-mod');
                     if (k.code === 'ControlLeft' && activeModifiers.Control) btn.classList.add('active-mod');
@@ -495,7 +893,6 @@
         });
 
         function handleVirtualKeyPress(k) {
-            // Обработка модификаторов
             if (k.code === 'ShiftLeft') {
                 isShiftActive = !isShiftActive;
                 sendInput({ t: isShiftActive ? "kd" : "ku", code: "ShiftLeft", key: "Shift" });
@@ -528,19 +925,16 @@
                 return;
             }
 
-            // Обычные клавиши
             sendInput({ t: "kd", code: k.code, key: k.label });
             setTimeout(() => {
                 sendInput({ t: "ku", code: k.code, key: k.label });
             }, 30);
 
-            // Сброс временного Shift после ввода одной буквы
             if (isShiftActive) {
                 isShiftActive = false;
                 sendInput({ t: "ku", code: "ShiftLeft", key: "Shift" });
                 renderVirtualKeyboard();
             }
-            // Сброс модификаторов после комбинации
             if (activeModifiers.Control || activeModifiers.Alt || activeModifiers.Meta) {
                 if (activeModifiers.Control) sendInput({ t: "ku", code: "ControlLeft", key: "Control" });
                 if (activeModifiers.Alt) sendInput({ t: "ku", code: "AltLeft", key: "Alt" });
@@ -553,7 +947,7 @@
         }
         renderVirtualKeyboard();
 
-        // Физическая клавиатура (ПК / ноутбук) - поддержка ВСЕХ клавиш
+        // Физическая клавиатура (ПК / ноутбук)
         window.addEventListener('keydown', (e) => {
             if (authModal.style.display !== 'none') return;
             if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
@@ -570,22 +964,31 @@
             sendInput({ t: "ku", key: e.key, code: e.code });
         });
 
-        function setStatus(text, isConnected = false) {
+        function setStatus(text, state = 'normal') {
             statusOverlay.textContent = text;
-            statusOverlay.style.opacity = '1';
-            if (isConnected) {
-                statusOverlay.classList.add("connected");
-                setTimeout(() => statusOverlay.style.opacity = '0', 3500);
-            } else {
-                statusOverlay.classList.remove("connected");
+            statusDot.className = 'status-dot';
+            if (state === 'connected') {
+                statusDot.classList.add('connected');
+            } else if (state === 'error') {
+                statusDot.classList.add('error');
             }
+        }
+
+        function showTouchRipple(x, y) {
+            const ripple = document.createElement('div');
+            ripple.className = 'touch-ripple';
+            ripple.style.left = x + 'px';
+            ripple.style.top = y + 'px';
+            document.body.appendChild(ripple);
+            setTimeout(() => ripple.remove(), 400);
         }
 
         function initConnection(pin) {
             authError.textContent = "";
-            loginBtn.textContent = "⏳ Вход...";
+            authForm.classList.remove('shake');
+            loginBtn.textContent = "Подключение...";
             loginBtn.disabled = true;
-            setStatus("Авторизация на сервере...");
+            setStatus("Авторизация...", 'normal');
 
             try {
                 if (ws) {
@@ -598,33 +1001,35 @@
                 ws.onopen = () => {
                     safeStorageSet('deskremote_pin', pin);
                     authModal.style.display = 'none';
-                    loginBtn.textContent = "Войти";
+                    loginBtn.textContent = "Подключиться";
                     loginBtn.disabled = false;
-                    setStatus("Установка WebRTC соединения...");
+                    setStatus("Согласование WebRTC...", 'normal');
                     setupWebRTC();
                 };
 
-                ws.onerror = (err) => {
-                    loginBtn.textContent = "Войти";
+                ws.onerror = () => {
+                    loginBtn.textContent = "Подключиться";
                     loginBtn.disabled = false;
                     authModal.style.display = 'flex';
-                    authError.textContent = "Неверный PIN-код или сервер недоступен";
-                    setStatus("Ошибка авторизации");
+                    authError.textContent = "Неверный PIN или сервер недоступен";
+                    authForm.classList.add('shake');
+                    setStatus("Ошибка доступа", 'error');
                     safeStorageRemove('deskremote_pin');
                     if (pc) pc.close();
                 };
 
-                ws.onclose = (ev) => {
-                    loginBtn.textContent = "Войти";
+                ws.onclose = () => {
+                    loginBtn.textContent = "Подключиться";
                     loginBtn.disabled = false;
                     if (authModal.style.display === 'none') {
-                        setStatus("Соединение с сервером закрыто");
+                        setStatus("Соединение закрыто", 'error');
                     }
                 };
             } catch (err) {
-                loginBtn.textContent = "Войти";
+                loginBtn.textContent = "Подключиться";
                 loginBtn.disabled = false;
                 authError.textContent = "Ошибка: " + err.message;
+                authForm.classList.add('shake');
             }
         }
 
@@ -635,6 +1040,8 @@
                 initConnection(pin);
             } else {
                 authError.textContent = "Введите PIN-код";
+                authForm.classList.add('shake');
+                setTimeout(() => authForm.classList.remove('shake'), 500);
             }
         }
 
@@ -666,17 +1073,17 @@
                     }
                     video.muted = true;
                     video.play().then(() => {
-                        setStatus("Трансляция активна", true);
+                        setStatus("В сети (60 FPS)", 'connected');
                     }).catch(() => {
-                        setStatus("Трансляция готова (коснитесь экрана)");
+                        setStatus("Коснитесь для старта", 'normal');
                     });
                 };
 
                 pc.onconnectionstatechange = () => {
                     if (pc.connectionState === 'connected') {
-                        setStatus("Соединено! Ожидание видеопотока...");
+                        setStatus("В сети (60 FPS)", 'connected');
                     } else if (pc.connectionState === 'disconnected' || pc.connectionState === 'failed') {
-                        setStatus("Соединение разорвано. Переподключение...");
+                        setStatus("Переподключение...", 'error');
                     }
                 };
 
@@ -707,7 +1114,7 @@
                     } catch (err) {}
                 };
             } catch (err) {
-                setStatus("Ошибка WebRTC: " + err.message);
+                setStatus("Ошибка WebRTC: " + err.message, 'error');
             }
         }
 
@@ -739,7 +1146,9 @@
 
             return {
                 x: Math.max(0, Math.min(1, clickX / renderW)),
-                y: Math.max(0, Math.min(1, clickY / renderH))
+                y: Math.max(0, Math.min(1, clickY / renderH)),
+                rawX: clientX,
+                rawY: clientY
             };
         }
 
@@ -760,6 +1169,8 @@
 
             video.addEventListener('mousedown', (e) => {
                 video.play().catch(() => {});
+                const coords = getNormalizedCoords(e);
+                showTouchRipple(coords.rawX, coords.rawY);
                 sendInput({ t: "md", b: e.button });
             });
             video.addEventListener('mouseup', (e) => sendInput({ t: "mu", b: e.button }));
@@ -769,11 +1180,12 @@
                 sendInput({ t: "mw", dy: e.deltaY < 0 ? 1 : -1 });
             }, { passive: false });
 
-            // Сенсорное управление (Телефон / Планшет)
+            // Сенсорное управление (Смартфон / Планшет)
             video.addEventListener('touchstart', (e) => {
                 video.play().catch(() => {});
                 if (e.touches.length === 1) {
                     const coords = getNormalizedCoords(e);
+                    showTouchRipple(coords.rawX, coords.rawY);
                     sendInput({ t: "mm", x: coords.x, y: coords.y });
                     sendInput({ t: "md", b: 0 });
                 }
