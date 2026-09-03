@@ -5,6 +5,17 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.2.0] - 2026-09-03
+
+### Added
+- **Full-Size On-Screen Virtual Keyboard**:
+  - Complete 5-row virtual keyboard for smartphones and tablets (Esc, numbers, QWERTY/ЙЦУКЕН letters, navigation arrows, Enter, Backspace, Tab, Caps, Shift, Ctrl, Alt, Win, Space).
+  - One-tap language switcher (`🌐 RU / EN`) with full Cyrillic (ЙЦУКЕН) and Latin layouts.
+  - Sticky modifiers (`Ctrl`, `Alt`, `Shift`, `Win`) for triggering keyboard shortcuts (`Ctrl+C`, `Ctrl+V`, `Alt+Tab`, `Win+D`) from mobile devices.
+  - Direct text input field (`Ввести текст с телефона...`) with instantaneous clipboard paste (`pasteText` via `Ctrl+V`) for fast, error-free typing of whole sentences, passwords, and emojis from mobile software keyboards and voice input.
+- **Complete Physical Keyboard Forwarding**:
+  - Mapped all standard 104 keys (letters, digits, punctuation, brackets, math operators, functional keys F1-F12, navigation keys) directly from browser `e.code` to Windows virtual key codes.
+
 ## [1.1.0] - 2026-09-03
 
 ### Added
