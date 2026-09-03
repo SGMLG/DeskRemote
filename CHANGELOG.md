@@ -5,6 +5,16 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.0] - 2026-09-03
+
+### Added
+- **Full Keyboard & Typing Support**:
+  - Direct Unicode keystroke injection (supports Russian Cyrillic, English, numbers, symbols, and any language without layout mismatch).
+  - Virtual key code support for special keys (`Backspace`, `Enter`, `Tab`, `Escape`, `Delete`, `Arrow Keys`, `F1-F12`, `Win key`, modifiers).
+  - Desktop keyboard integration: captures physical keyboard typing, shortcuts (`Ctrl+C`, `Ctrl+V`, `Ctrl+A`, `Ctrl+Z`), and special keys.
+  - Mobile virtual keyboard toggle: added **"⌨ Клавиатура"** button to open the smartphone/tablet software keyboard.
+  - Mobile Quick-Keys panel: handy touch buttons for `Esc`, `Tab`, `Win`, `Backspace`, and `Enter`.
+
 ## [1.0.2] - 2026-09-02
 
 ### Fixed
