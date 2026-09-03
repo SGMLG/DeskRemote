@@ -57,7 +57,7 @@
             display: flex;
             gap: 8px;
             z-index: 20;
-            opacity: 0.8;
+            opacity: 0.85;
             transition: opacity 0.3s;
         }
         #topControls:hover {
@@ -72,8 +72,43 @@
             font-size: 13px;
             cursor: pointer;
             backdrop-filter: blur(4px);
+            display: flex;
+            align-items: center;
+            gap: 6px;
         }
-        .ctrl-btn:hover {
+        .ctrl-btn:hover, .ctrl-btn:active {
+            background: #1976d2;
+            border-color: #1976d2;
+        }
+
+        .quick-keys-bar {
+            position: absolute;
+            bottom: 18px;
+            left: 50%;
+            transform: translateX(-50%);
+            display: flex;
+            gap: 6px;
+            z-index: 25;
+            background: rgba(20, 20, 20, 0.88);
+            padding: 6px 10px;
+            border-radius: 10px;
+            backdrop-filter: blur(8px);
+            border: 1px solid #444;
+            box-shadow: 0 4px 16px rgba(0,0,0,0.5);
+        }
+        .qk-btn {
+            background: #2b2b2b;
+            color: #fff;
+            border: 1px solid #555;
+            padding: 8px 12px;
+            border-radius: 6px;
+            font-size: 13px;
+            font-weight: 600;
+            cursor: pointer;
+            user-select: none;
+            touch-action: manipulation;
+        }
+        .qk-btn:hover, .qk-btn:active {
             background: #1976d2;
             border-color: #1976d2;
         }
@@ -157,8 +192,20 @@
     <div id="container">
         <div id="statusOverlay">Ожидание ввода PIN...</div>
         <div id="topControls">
+            <button type="button" id="kbdBtn" class="ctrl-btn" title="Вызов экранной клавиатуры">⌨ Клавиатура</button>
             <button type="button" id="fsBtn" class="ctrl-btn" title="Развернуть / Свернуть">⛶ На весь экран</button>
         </div>
+
+        <div id="quickKeys" class="quick-keys-bar" style="display:none;">
+            <button type="button" class="qk-btn" data-key="Escape">Esc</button>
+            <button type="button" class="qk-btn" data-key="Tab">Tab</button>
+            <button type="button" class="qk-btn" data-key="Meta">Win</button>
+            <button type="button" class="qk-btn" data-key="Backspace">⌫ Back</button>
+            <button type="button" class="qk-btn" data-key="Enter">⏎ Enter</button>
+        </div>
+
+        <input type="text" id="mobileInput" style="position:fixed; opacity:0; left:0; top:-100px; width:1px; height:1px; pointer-events:none; z-index:-1;" autocapitalize="off" autocomplete="off" autocorrect="off" spellcheck="false">
+
         <video id="remoteVideo" autoplay playsinline webkit-playsinline x5-playsinline muted></video>
     </div>
 
@@ -171,6 +218,9 @@
         const loginBtn = document.getElementById('loginBtn');
         const authError = document.getElementById('authError');
         const fsBtn = document.getElementById('fsBtn');
+        const kbdBtn = document.getElementById('kbdBtn');
+        const quickKeys = document.getElementById('quickKeys');
+        const mobileInput = document.getElementById('mobileInput');
         let pc, inputChannel, ws;
 
         const iceConfig = {
@@ -216,6 +266,97 @@
         });
         document.addEventListener('webkitfullscreenchange', () => {
             fsBtn.textContent = document.webkitFullscreenElement ? "🗗 Оконный режим" : "⛶ На весь экран";
+        });
+
+        // Переключение экранной клавиатуры на телефонах / планшетах
+        let isKeyboardOpen = false;
+        kbdBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            isKeyboardOpen = !isKeyboardOpen;
+            quickKeys.style.display = isKeyboardOpen ? 'flex' : 'none';
+            kbdBtn.style.background = isKeyboardOpen ? '#1976d2' : '';
+            if (isKeyboardOpen) {
+                mobileInput.focus();
+            } else {
+                mobileInput.blur();
+            }
+        });
+
+        // Быстрые клавиши (Esc, Tab, Win, Backspace, Enter)
+        document.querySelectorAll('.qk-btn').forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                const key = btn.getAttribute('data-key');
+                sendInput({ t: "kd", key: key, code: key });
+                sendInput({ t: "ku", key: key, code: key });
+                if (isKeyboardOpen) {
+                    mobileInput.focus();
+                }
+            });
+        });
+
+        // Обработка ввода текста на мобильных устройствах
+        mobileInput.addEventListener('beforeinput', (e) => {
+            if (e.inputType === 'deleteContentBackward') {
+                sendInput({ t: "kd", key: "Backspace", code: "Backspace" });
+                sendInput({ t: "ku", key: "Backspace", code: "Backspace" });
+            } else if (e.inputType === 'insertLineBreak') {
+                sendInput({ t: "kd", key: "Enter", code: "Enter" });
+                sendInput({ t: "ku", key: "Enter", code: "Enter" });
+            } else if (e.data) {
+                sendInput({ t: "char", str: e.data });
+            }
+        });
+
+        mobileInput.addEventListener('input', () => {
+            mobileInput.value = "";
+        });
+
+        mobileInput.addEventListener('keydown', (e) => {
+            if (e.key === 'Backspace' || e.key === 'Enter') {
+                sendInput({ t: "kd", key: e.key, code: e.code });
+                sendInput({ t: "ku", key: e.key, code: e.code });
+            }
+        });
+
+        // Обработка клавиатуры на ПК (физическая клавиатура)
+        const specialKeys = [
+            "Backspace", "Tab", "Enter", "Shift", "Control", "Alt", "Pause",
+            "CapsLock", "Escape", "PageUp", "PageDown", "End", "Home",
+            "ArrowLeft", "ArrowUp", "ArrowRight", "ArrowDown", "PrintScreen",
+            "Insert", "Delete", "Meta", "F1", "F2", "F3", "F4", "F5", "F6",
+            "F7", "F8", "F9", "F10", "F11", "F12"
+        ];
+
+        window.addEventListener('keydown', (e) => {
+            if (authModal.style.display !== 'none') return;
+            if (e.target === pinInput) return;
+            if (document.activeElement === mobileInput) return;
+
+            if (specialKeys.includes(e.key)) {
+                e.preventDefault();
+                sendInput({ t: "kd", key: e.key, code: e.code });
+                return;
+            }
+
+            if (e.ctrlKey || e.altKey || e.metaKey) {
+                e.preventDefault();
+                sendInput({ t: "kd", key: e.key, code: e.code });
+                return;
+            }
+
+            if (e.key.length === 1) {
+                e.preventDefault();
+                sendInput({ t: "char", str: e.key });
+            }
+        });
+
+        window.addEventListener('keyup', (e) => {
+            if (authModal.style.display !== 'none') return;
+            if (e.target === pinInput) return;
+            if (document.activeElement === mobileInput) return;
+
+            sendInput({ t: "ku", key: e.key, code: e.code });
         });
 
         function setStatus(text, isConnected = false) {
