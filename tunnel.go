@@ -87,52 +87,70 @@ func checkDependencies() {
 
 func startCloudflareTunnel(ctx context.Context, token string, onURLReady func(string)) {
 	cloudflaredPath := getCloudflaredPath()
-	logToFile(fmt.Sprintf("[Tunnel] Запуск %s", cloudflaredPath))
 
-	var args []string
-	if token != "" {
-		args = []string{"tunnel", "run", "--token", token}
-	} else {
-		args = []string{"tunnel", "--url", "http://localhost:8080"}
-	}
+	for {
+		if ctx.Err() != nil {
+			return
+		}
 
-	cmd := exec.CommandContext(ctx, cloudflaredPath, args...)
-	cmd.SysProcAttr = &syscall.SysProcAttr{HideWindow: true}
-	stderr, err := cmd.StderrPipe()
-	if err != nil {
-		logToFile(fmt.Sprintf("[Tunnel] Ошибка StderrPipe: %v", err))
-		return
-	}
-	stdout, _ := cmd.StdoutPipe()
+		logToFile(fmt.Sprintf("[Tunnel] Запуск %s", cloudflaredPath))
 
-	if err := cmd.Start(); err != nil {
-		logToFile(fmt.Sprintf("[Tunnel] Ошибка Start cloudflared: %v (проверьте наличие бинарника)", err))
-		return
-	}
-	logToFile("[Tunnel] Процесс cloudflared запущен!")
+		var args []string
+		if token != "" {
+			args = []string{"tunnel", "run", "--token", token}
+		} else {
+			args = []string{"tunnel", "--url", "http://localhost:8080"}
+		}
 
-	handleScan := func(scanner *bufio.Scanner, name string) {
-		for scanner.Scan() {
-			line := scanner.Text()
-			logToFile(fmt.Sprintf("[%s] %s", name, line))
-			if strings.Contains(line, "trycloudflare.com") {
-				match := tunnelURLRegex.FindString(line)
-				if match != "" && onURLReady != nil {
-					logToFile(fmt.Sprintf("[Tunnel] Найдена ссылка: %s", match))
-					onURLReady(match)
+		cmd := exec.CommandContext(ctx, cloudflaredPath, args...)
+		cmd.SysProcAttr = &syscall.SysProcAttr{HideWindow: true}
+		stderr, err := cmd.StderrPipe()
+		if err != nil {
+			logToFile(fmt.Sprintf("[Tunnel] Ошибка StderrPipe: %v", err))
+			time.Sleep(3 * time.Second)
+			continue
+		}
+		stdout, _ := cmd.StdoutPipe()
+
+		if err := cmd.Start(); err != nil {
+			logToFile(fmt.Sprintf("[Tunnel] Ошибка Start cloudflared: %v (проверьте наличие бинарника)", err))
+			time.Sleep(3 * time.Second)
+			continue
+		}
+		logToFile("[Tunnel] Процесс cloudflared запущен!")
+
+		var wg sync.WaitGroup
+		handleScan := func(scanner *bufio.Scanner, name string) {
+			defer wg.Done()
+			for scanner.Scan() {
+				line := scanner.Text()
+				logToFile(fmt.Sprintf("[%s] %s", name, line))
+				if strings.Contains(line, "trycloudflare.com") {
+					match := tunnelURLRegex.FindString(line)
+					if match != "" && onURLReady != nil {
+						logToFile(fmt.Sprintf("[Tunnel] Найдена ссылка: %s", match))
+						onURLReady(match)
+					}
 				}
 			}
 		}
-	}
 
-	go handleScan(bufio.NewScanner(stderr), "stderr")
-	if stdout != nil {
-		go handleScan(bufio.NewScanner(stdout), "stdout")
-	}
+		wg.Add(1)
+		go handleScan(bufio.NewScanner(stderr), "stderr")
+		if stdout != nil {
+			wg.Add(1)
+			go handleScan(bufio.NewScanner(stdout), "stdout")
+		}
 
-	<-ctx.Done()
-	if cmd.Process != nil {
-		_ = cmd.Process.Kill()
+		waitErr := cmd.Wait()
+		wg.Wait()
+
+		if ctx.Err() != nil {
+			logToFile("[Tunnel] Завершение туннеля по контексту")
+			return
+		}
+
+		logToFile(fmt.Sprintf("[Tunnel] Процесс cloudflared завершился (%v), перезапуск через 3 секунды...", waitErr))
+		time.Sleep(3 * time.Second)
 	}
-	_ = cmd.Wait()
 }
