@@ -106,6 +106,8 @@ func detectBestVideoEncoder(ffmpegPath string) VideoEncoderConfig {
 					"-bufsize", "2M",
 					"-g", "60",
 					"-bf", "0",
+					"-header_spacing", "1",
+					"-forced_idr", "1",
 					"-profile:v", "constrained_baseline",
 					"-pix_fmt", "yuv420p",
 					"-f", "h264", "pipe:1",
@@ -126,6 +128,8 @@ func detectBestVideoEncoder(ffmpegPath string) VideoEncoderConfig {
 					"-bufsize", "2M",
 					"-g", "60",
 					"-bf", "0",
+					"-header_spacing", "1",
+					"-forced_idr", "1",
 					"-profile:v", "main",
 					"-pix_fmt", "yuv420p",
 					"-f", "h264", "pipe:1",
@@ -150,6 +154,8 @@ func detectBestVideoEncoder(ffmpegPath string) VideoEncoderConfig {
 					"-bufsize", "2M",
 					"-g", "60",
 					"-bf", "0",
+					"-forced-idr", "1",
+					"-repeat-headers", "1",
 					"-profile:v", "baseline",
 					"-pix_fmt", "yuv420p",
 					"-f", "h264", "pipe:1",
@@ -189,6 +195,7 @@ func detectBestVideoEncoder(ffmpegPath string) VideoEncoderConfig {
 				"-c:v", "libx264",
 				"-preset", "ultrafast",
 				"-tune", "zerolatency",
+				"-x264-params", "repeat-headers=1",
 				"-b:v", "2500k",
 				"-maxrate", "3000k",
 				"-bufsize", "1000k",
@@ -214,6 +221,8 @@ type ScreenBroadcaster struct {
 	cancelFunc context.CancelFunc
 	idleTimer  *time.Timer
 	cmd        *exec.Cmd
+	sps        []byte
+	pps        []byte
 }
 
 var broadcaster = &ScreenBroadcaster{
@@ -230,17 +239,19 @@ func (b *ScreenBroadcaster) GetActiveClientsCount() int {
 // RegisterTrack adds a track to receive screen capture frames and starts FFmpeg if needed.
 func (b *ScreenBroadcaster) RegisterTrack(track *webrtc.TrackLocalStaticSample) {
 	b.mu.Lock()
-	defer b.mu.Unlock()
 
 	if b.idleTimer != nil {
 		b.idleTimer.Stop()
 		b.idleTimer = nil
 	}
 
-	b.tracks[track] = struct{}{}
-	logToFile(fmt.Sprintf("[VideoBroadcaster] Видеотрек зарегистрирован (всего активных: %d)", len(b.tracks)))
-
-	if !b.running {
+	var spsCopy, ppsCopy []byte
+	if b.running {
+		if len(b.sps) > 0 && len(b.pps) > 0 {
+			spsCopy = append([]byte(nil), b.sps...)
+			ppsCopy = append([]byte(nil), b.pps...)
+		}
+	} else {
 		b.generation++
 		gen := b.generation
 		ctx, cancel := context.WithCancel(context.Background())
@@ -248,6 +259,18 @@ func (b *ScreenBroadcaster) RegisterTrack(track *webrtc.TrackLocalStaticSample) 
 		b.running = true
 		go b.captureLoop(ctx, gen)
 	}
+
+	// Deliver cached SPS/PPS headers immediately to the new track BEFORE registering it
+	// for broadcasts, guaranteeing that iOS VideoToolbox receives codec parameter sets
+	// before any subsequent stream frames (IDR or non-IDR).
+	if len(spsCopy) > 0 && len(ppsCopy) > 0 {
+		_ = track.WriteSample(media.Sample{Data: spsCopy, Duration: 0})
+		_ = track.WriteSample(media.Sample{Data: ppsCopy, Duration: 0})
+	}
+
+	b.tracks[track] = struct{}{}
+	logToFile(fmt.Sprintf("[VideoBroadcaster] Видеотрек зарегистрирован (всего активных: %d)", len(b.tracks)))
+	b.mu.Unlock()
 }
 
 // UnregisterTrack removes a track from receiving frames.
@@ -290,11 +313,16 @@ func (b *ScreenBroadcaster) stopInternal() {
 		b.cancelFunc()
 		b.cancelFunc = nil
 	}
-	if b.cmd != nil && b.cmd.Process != nil {
-		_ = b.cmd.Process.Kill()
+	if b.cmd != nil {
+		if b.cmd.Process != nil {
+			_ = b.cmd.Process.Kill()
+		}
+		b.cmd = nil
 	}
 	b.running = false
 	b.tracks = make(map[*webrtc.TrackLocalStaticSample]struct{})
+	b.sps = nil
+	b.pps = nil
 	logToFile("[VideoBroadcaster] Захват экрана полностью остановлен")
 }
 
@@ -316,6 +344,64 @@ func (b *ScreenBroadcaster) broadcastSample(sample media.Sample) {
 }
 
 func (b *ScreenBroadcaster) captureLoop(ctx context.Context, gen int) {
+	defer func() {
+		b.mu.Lock()
+		if b.generation == gen {
+			b.running = false
+			b.cmd = nil
+			b.cancelFunc = nil
+			b.sps = nil
+			b.pps = nil
+		}
+		b.mu.Unlock()
+	}()
+
+	for {
+		if ctx.Err() != nil {
+			return
+		}
+
+		b.mu.Lock()
+		if b.generation != gen {
+			b.mu.Unlock()
+			return
+		}
+		activeCount := len(b.tracks)
+		b.mu.Unlock()
+
+		if activeCount == 0 {
+			return
+		}
+
+		b.runCaptureSession(ctx, gen)
+
+		if ctx.Err() != nil {
+			return
+		}
+
+		b.mu.Lock()
+		if b.generation != gen {
+			b.mu.Unlock()
+			return
+		}
+		activeCount = len(b.tracks)
+		b.mu.Unlock()
+
+		if activeCount == 0 {
+			return
+		}
+
+		logToFile(fmt.Sprintf("[Capture] Поток завершился (EOF/ошибка). Повторный запуск через 2 секунды (активных клиентов: %d)...", activeCount))
+
+		select {
+		case <-ctx.Done():
+			return
+		case <-time.After(2 * time.Second):
+		}
+	}
+}
+
+func (b *ScreenBroadcaster) runCaptureSession(ctx context.Context, gen int) {
 	ffmpegPath := getFFmpegPath()
 	encoderConfig := detectBestVideoEncoder(ffmpegPath)
 
@@ -332,18 +418,9 @@ func (b *ScreenBroadcaster) captureLoop(ctx context.Context, gen int) {
 	cmd := exec.CommandContext(ctx, ffmpegPath, cmdArgs...)
 	cmd.SysProcAttr = &syscall.SysProcAttr{HideWindow: true}
 
-	b.mu.Lock()
-	b.cmd = cmd
-	b.mu.Unlock()
-
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
 		logToFile(fmt.Sprintf("[Capture] Ошибка создания stdout пайпа: %v", err))
-		b.mu.Lock()
-		if b.generation == gen {
-			b.running = false
-		}
-		b.mu.Unlock()
 		return
 	}
 
@@ -362,13 +439,20 @@ func (b *ScreenBroadcaster) captureLoop(ctx context.Context, gen int) {
 
 	if err := cmd.Start(); err != nil {
 		logToFile(fmt.Sprintf("[Capture] Не удалось запустить ffmpeg: %v", err))
-		b.mu.Lock()
-		if b.generation == gen {
-			b.running = false
-		}
-		b.mu.Unlock()
 		return
 	}
+
+	b.mu.Lock()
+	if b.generation != gen || ctx.Err() != nil {
+		b.mu.Unlock()
+		if cmd.Process != nil {
+			_ = cmd.Process.Kill()
+		}
+		_ = cmd.Wait()
+		return
+	}
+	b.cmd = cmd
+	b.mu.Unlock()
 
 	defer func() {
 		if cmd.Process != nil {
@@ -376,10 +460,8 @@ func (b *ScreenBroadcaster) captureLoop(ctx context.Context, gen int) {
 		}
 		_ = cmd.Wait()
 		b.mu.Lock()
-		if b.generation == gen {
-			b.running = false
+		if b.cmd == cmd {
 			b.cmd = nil
-			b.cancelFunc = nil
 		}
 		b.mu.Unlock()
 	}()
@@ -405,6 +487,18 @@ func (b *ScreenBroadcaster) captureLoop(ctx context.Context, gen int) {
 				logToFile(fmt.Sprintf("[Capture] Ошибка чтения кадра: %v", err))
 			}
 			return
+		}
+
+		if nal.UnitType == h264reader.NalUnitTypeSPS {
+			b.mu.Lock()
+			b.sps = make([]byte, len(nal.Data))
+			copy(b.sps, nal.Data)
+			b.mu.Unlock()
+		} else if nal.UnitType == h264reader.NalUnitTypePPS {
+			b.mu.Lock()
+			b.pps = make([]byte, len(nal.Data))
+			copy(b.pps, nal.Data)
+			b.mu.Unlock()
 		}
 
 		duration := time.Duration(0)

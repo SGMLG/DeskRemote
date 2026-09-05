@@ -956,6 +956,10 @@
 
     <script>
         const video = document.getElementById('remoteVideo');
+        video.addEventListener('playing', () => {
+            hideResumeOverlay();
+            setStatus("В сети", 'connected');
+        });
         const statusDot = document.getElementById('statusDot');
         const statusText = document.getElementById('statusText');
         const latencyBadge = document.getElementById('latencyBadge');
@@ -1506,7 +1510,17 @@
             }
         });
 
+        let playWatchdog = null;
+        let isResuming = false;
+        function clearPlayWatchdog() {
+            if (playWatchdog) {
+                clearTimeout(playWatchdog);
+                playWatchdog = null;
+            }
+        }
+
         function showResumeOverlay(err) {
+            clearPlayWatchdog();
             let overlay = document.getElementById('resume-overlay');
             if (!overlay) {
                 overlay = document.createElement('div');
@@ -1514,16 +1528,35 @@
                 overlay.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(11,19,41,0.92);display:flex;flex-direction:column;align-items:center;justify-content:center;z-index:9998;cursor:pointer;backdrop-filter:blur(6px);-webkit-tap-highlight-color:transparent;touch-action:manipulation;padding:20px;box-sizing:border-box;';
                 
                 const resumeHandler = (e) => {
-                    if (e) e.preventDefault();
+                    if (e) {
+                        e.preventDefault();
+                        e.stopPropagation();
+                    }
+                    if (isResuming) return;
+                    isResuming = true;
+                    setTimeout(() => { isResuming = false; }, 500);
+
+                    clearPlayWatchdog();
                     video.muted = true;
                     const subText = document.getElementById('resume-overlay-sub');
                     if (subText) subText.textContent = "Запуск потока...";
+
+                    playWatchdog = setTimeout(() => {
+                        const sub = document.getElementById('resume-overlay-sub');
+                        if (sub && document.getElementById('resume-overlay')) {
+                            sub.innerHTML = '<span style="color:#f59e0b;font-weight:600">Ожидание видеокадров...</span><br><span style="font-size:12px;opacity:0.9">Если ПК заблокирован, разблокируйте Windows.</span>';
+                        }
+                    }, 4000);
+
                     video.play().then(() => {
                         video.muted = !isAudioEnabled;
-                        hideResumeOverlay();
-                        setStatus("В сети", 'connected');
+                        if (!video.paused && video.readyState >= 3) {
+                            hideResumeOverlay();
+                            setStatus("В сети", 'connected');
+                        }
                     }).catch((playErr) => {
                         console.error("Resume play failed:", playErr);
+                        clearPlayWatchdog();
                         if (subText) {
                             subText.innerHTML = `<span style="color:#ef4444;font-weight:600">Ошибка: ${playErr.name}</span><br><span style="font-size:12px;opacity:0.8">${playErr.message || 'Проверьте поддержку H.264'}</span>`;
                         }
@@ -1544,6 +1577,8 @@
         }
 
         function hideResumeOverlay() {
+            clearPlayWatchdog();
+            isResuming = false;
             const el = document.getElementById('resume-overlay');
             if (el) el.remove();
         }
@@ -1557,6 +1592,7 @@
         function handleLogout() {
             isUserLoggedOut = true;
             releaseWakeLock();
+            hideResumeOverlay();
             clearTimeout(reconnectTimer);
             clearInterval(statsInterval);
             safeStorageRemove('deskremote_pin');
@@ -1687,7 +1723,9 @@
                 pc.ontrack = (event) => {
                     console.log('[WebRTC] ontrack:', event.track.kind);
                     if (event.streams && event.streams[0]) {
-                        video.srcObject = event.streams[0];
+                        if (video.srcObject !== event.streams[0]) {
+                            video.srcObject = event.streams[0];
+                        }
                     } else {
                         if (!remoteStream) {
                             remoteStream = new MediaStream();
@@ -1702,7 +1740,9 @@
                             video.muted = !isAudioEnabled;
                             setStatus("В сети", 'connected');
                             startTelemetryMonitoring();
-                            hideResumeOverlay();
+                            if (!video.paused && video.readyState >= 3) {
+                                hideResumeOverlay();
+                            }
                         }).catch((err) => {
                             console.warn("Autoplay blocked:", err);
                             setStatus("Коснитесь для старта", 'normal');
