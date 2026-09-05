@@ -3,6 +3,7 @@ package main
 
 import (
 	"os"
+	"strings"
 
 	"golang.org/x/sys/windows/registry"
 )
@@ -22,7 +23,18 @@ func setAutostart(enable bool) error {
 		if err != nil {
 			return err
 		}
-		return k.SetStringValue(appRegistryName, `"`+exePath+`"`)
+		cmdLine := `"` + exePath + `"`
+		if len(os.Args) > 1 {
+			for _, arg := range os.Args[1:] {
+				if strings.Contains(arg, " ") || strings.Contains(arg, `"`) {
+					escapedArg := strings.ReplaceAll(arg, `"`, `\"`)
+					cmdLine += ` "` + escapedArg + `"`
+				} else {
+					cmdLine += " " + arg
+				}
+			}
+		}
+		return k.SetStringValue(appRegistryName, cmdLine)
 	}
 	return k.DeleteValue(appRegistryName)
 }

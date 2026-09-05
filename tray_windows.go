@@ -2,6 +2,7 @@
 package main
 
 import (
+	"fmt"
 	"os/exec"
 	"runtime"
 	"sync"
@@ -38,6 +39,8 @@ var (
 	procGlobalAlloc      = kernel32.NewProc("GlobalAlloc")
 	procGlobalLock       = kernel32.NewProc("GlobalLock")
 	procGlobalUnlock     = kernel32.NewProc("GlobalUnlock")
+	procGlobalFree       = kernel32.NewProc("GlobalFree")
+	procRtlMoveMemory    = kernel32.NewProc("RtlMoveMemory")
 )
 
 const (
@@ -136,22 +139,29 @@ func copyToClipboard(text string) {
 	}
 	ptr, _, _ := procGlobalLock.Call(hMem)
 	if ptr == 0 {
+		procGlobalFree.Call(hMem)
 		return
 	}
-	for i, val := range utf16 {
-		*(*uint16)(unsafe.Pointer(ptr + uintptr(i*2))) = val
-	}
+	procRtlMoveMemory.Call(ptr, uintptr(unsafe.Pointer(&utf16[0])), uintptr(size))
 	procGlobalUnlock.Call(hMem)
 
+	copied := false
 	for attempts := 0; attempts < 10; attempts++ {
 		r, _, _ := procOpenClipboard.Call(0)
 		if r != 0 {
 			procEmptyClipboard.Call()
-			procSetClipboardData.Call(CF_UNICODETEXT, hMem)
+			ret, _, _ := procSetClipboardData.Call(CF_UNICODETEXT, hMem)
 			procCloseClipboard.Call()
+			if ret != 0 {
+				copied = true
+			}
 			break
 		}
 		time.Sleep(10 * time.Millisecond)
+	}
+
+	if !copied {
+		procGlobalFree.Call(hMem)
 	}
 }
 
@@ -252,6 +262,7 @@ func wndProc(hwnd uintptr, msg uint32, wParam, lParam uintptr) uintptr {
 
 func initTray(onExit func()) {
 	runtime.LockOSThread()
+	logToFile("[Tray] initTray старт")
 	onExitCallback = onExit
 	className, _ := syscall.UTF16PtrFromString("DeskRemoteTrayClass")
 	hIcon, _, _ := procLoadIconW.Call(0, uintptr(IDI_APPLICATION))
@@ -262,7 +273,8 @@ func initTray(onExit func()) {
 	wc.LpszClassName = className
 	wc.HIcon = hIcon
 
-	procRegisterClassExW.Call(uintptr(unsafe.Pointer(&wc)))
+	ret, _, err := procRegisterClassExW.Call(uintptr(unsafe.Pointer(&wc)))
+	logToFile(fmt.Sprintf("[Tray] RegisterClassExW ret=%d, err=%v", ret, err))
 	hwnd, _, _ := procCreateWindowExW.Call(0, uintptr(unsafe.Pointer(className)), 0, 0, 0, 0, 0, 0, 0, 0, 0, 0)
 	trayHWnd = hwnd
 
@@ -282,6 +294,7 @@ func initTray(onExit func()) {
 	for {
 		r, _, _ := procGetMessageW.Call(uintptr(unsafe.Pointer(&msg)), 0, 0, 0)
 		if int32(r) <= 0 {
+			logToFile(fmt.Sprintf("[Tray] Message loop terminated, GetMessage return=%d", int32(r)))
 			break
 		}
 		procTranslateMessage.Call(uintptr(unsafe.Pointer(&msg)))
@@ -294,7 +307,7 @@ func notifyURLReady(url string) {
 	currentURL = url
 	trayMu.Unlock()
 
-	copyToClipboard(url)
+	logToFile(fmt.Sprintf("[Tray] Ссылка готова: %s", url))
 	if trayHWnd == 0 {
 		return
 	}
@@ -305,9 +318,30 @@ func notifyURLReady(url string) {
 	nid.UID = 1
 	nid.UFlags = NIF_TIP
 
-	tip, _ := syscall.UTF16FromString("DeskRemote: Активен")
+	tipStr := "DeskRemote: " + url
+	if len(tipStr) > 120 {
+		tipStr = tipStr[:120]
+	}
+	tip, _ := syscall.UTF16FromString(tipStr)
 	copy(nid.SzTip[:], tip)
 
+	procShell_NotifyIconW.Call(uintptr(NIM_MODIFY), uintptr(unsafe.Pointer(&nid)))
+}
+
+func showTrayBalloon(title, msg string) {
+	if trayHWnd == 0 {
+		return
+	}
+	var nid NOTIFYICONDATAW
+	nid.CbSize = uint32(unsafe.Sizeof(nid))
+	nid.HWnd = trayHWnd
+	nid.UID = 1
+	nid.UFlags = NIF_INFO
+	nid.DwInfoFlags = NIIF_INFO
+	t, _ := syscall.UTF16FromString(title)
+	copy(nid.SzInfoTitle[:], t)
+	m, _ := syscall.UTF16FromString(msg)
+	copy(nid.SzInfo[:], m)
 	procShell_NotifyIconW.Call(uintptr(NIM_MODIFY), uintptr(unsafe.Pointer(&nid)))
 }
 

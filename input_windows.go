@@ -4,6 +4,8 @@ package main
 import (
 	"strings"
 	"syscall"
+	"unicode/utf16"
+	"unsafe"
 )
 
 var (
@@ -12,22 +14,49 @@ var (
 	procMouseEvent       = user32.NewProc("mouse_event")
 	procKeybdEvent       = user32.NewProc("keybd_event")
 	procGetSystemMetrics = user32.NewProc("GetSystemMetrics")
+	procLockWorkStation  = user32.NewProc("LockWorkStation")
+	procSendInput        = user32.NewProc("SendInput")
+	procSetProcessDPIAware = user32.NewProc("SetProcessDPIAware")
 )
 
 const (
-	SM_CXSCREEN          = 0
-	SM_CYSCREEN          = 1
-	MOUSEEVENTF_MOVE     = 0x0001
-	MOUSEEVENTF_LEFTDOWN = 0x0002
-	MOUSEEVENTF_LEFTUP   = 0x0004
-	MOUSEEVENTF_RIGHTDOWN = 0x0008
-	MOUSEEVENTF_RIGHTUP   = 0x0010
+	SM_CXSCREEN        = 0
+	SM_CYSCREEN        = 1
+	SM_XVIRTUALSCREEN  = 76
+	SM_YVIRTUALSCREEN  = 77
+	SM_CXVIRTUALSCREEN = 78
+	SM_CYVIRTUALSCREEN = 79
+
+	MOUSEEVENTF_MOVE       = 0x0001
+	MOUSEEVENTF_LEFTDOWN   = 0x0002
+	MOUSEEVENTF_LEFTUP     = 0x0004
+	MOUSEEVENTF_RIGHTDOWN  = 0x0008
+	MOUSEEVENTF_RIGHTUP    = 0x0010
 	MOUSEEVENTF_MIDDLEDOWN = 0x0020
 	MOUSEEVENTF_MIDDLEUP   = 0x0040
-	MOUSEEVENTF_WHEEL     = 0x0800
+	MOUSEEVENTF_WHEEL      = 0x0800
 
-	KEYEVENTF_KEYUP = 0x0002
+	KEYEVENTF_KEYUP       = 0x0002
+	KEYEVENTF_UNICODE     = 0x0004
+	KEYEVENTF_EXTENDEDKEY = 0x0001
+
+	INPUT_KEYBOARD = 1
 )
+
+type KEYBDINPUT struct {
+	WVk         uint16
+	WScan       uint16
+	DwFlags     uint32
+	Time        uint32
+	DwExtraInfo uintptr
+}
+
+type INPUT struct {
+	Type uint32
+	_    uint32 // Padding for 64-bit union alignment
+	Ki   KEYBDINPUT
+	_    [8]byte // Union padding to match MOUSEINPUT size (40 bytes total on x64)
+}
 
 type InputMessage struct {
 	Type   string  `json:"t"`
@@ -36,7 +65,7 @@ type InputMessage struct {
 	DX     float64 `json:"dx,omitempty"`
 	DY     float64 `json:"dy,omitempty"`
 	Button int     `json:"b,omitempty"`
-	DeltaY int     `json:"dy,omitempty"`
+	Wheel  int     `json:"wheel,omitempty"` // Renamed from "dy" to avoid JSON unmarshal conflict!
 	Key    string  `json:"key,omitempty"`
 	Code   string  `json:"code,omitempty"`
 	Str    string  `json:"str,omitempty"`
@@ -198,29 +227,52 @@ func getVK(key, code string) uintptr {
 	return 0
 }
 
-func pasteText(text string) {
-	copyToClipboard(text)
-	// Send Ctrl + V
-	procKeybdEvent.Call(0x11, 0, 0, 0)
-	procKeybdEvent.Call(0x56, 0, 0, 0)
-	procKeybdEvent.Call(0x56, 0, KEYEVENTF_KEYUP, 0)
-	procKeybdEvent.Call(0x11, 0, KEYEVENTF_KEYUP, 0)
+// sendUnicodeString injects characters directly using WinAPI SendInput with KEYEVENTF_UNICODE.
+// This preserves the host clipboard and works regardless of active input layout or languages.
+func sendUnicodeString(text string) {
+	utf16Chars := utf16.Encode([]rune(text))
+	for _, ch := range utf16Chars {
+		var inputs [2]INPUT
+		// Key down
+		inputs[0].Type = INPUT_KEYBOARD
+		inputs[0].Ki.WScan = ch
+		inputs[0].Ki.DwFlags = KEYEVENTF_UNICODE
+
+		// Key up
+		inputs[1].Type = INPUT_KEYBOARD
+		inputs[1].Ki.WScan = ch
+		inputs[1].Ki.DwFlags = KEYEVENTF_UNICODE | KEYEVENTF_KEYUP
+
+		procSendInput.Call(2, uintptr(unsafe.Pointer(&inputs[0])), uintptr(unsafe.Sizeof(inputs[0])))
+	}
 }
 
-func getScreenResolution() (int, int) {
-	w, _, _ := procGetSystemMetrics.Call(uintptr(SM_CXSCREEN))
-	h, _, _ := procGetSystemMetrics.Call(uintptr(SM_CYSCREEN))
-	return int(w), int(h)
+func getVirtualScreenBounds() (x, y, w, h int) {
+	vx, _, _ := procGetSystemMetrics.Call(uintptr(SM_XVIRTUALSCREEN))
+	vy, _, _ := procGetSystemMetrics.Call(uintptr(SM_YVIRTUALSCREEN))
+	vw, _, _ := procGetSystemMetrics.Call(uintptr(SM_CXVIRTUALSCREEN))
+	vh, _, _ := procGetSystemMetrics.Call(uintptr(SM_CYVIRTUALSCREEN))
+
+	if vw == 0 || vh == 0 {
+		// Fallback to primary display if virtual metrics unavailable
+		w1, _, _ := procGetSystemMetrics.Call(uintptr(SM_CXSCREEN))
+		h1, _, _ := procGetSystemMetrics.Call(uintptr(SM_CYSCREEN))
+		return 0, 0, int(w1), int(h1)
+	}
+	return int(vx), int(vy), int(vw), int(vh)
 }
 
-func handleInputEvent(msg InputMessage, screenW, screenH int) {
+func handleInputEvent(msg InputMessage) {
 	switch msg.Type {
 	case "mm":
-		targetX := int(msg.X * float64(screenW))
-		targetY := int(msg.Y * float64(screenH))
+		vx, vy, vw, vh := getVirtualScreenBounds()
+		targetX := vx + int(msg.X*float64(vw))
+		targetY := vy + int(msg.Y*float64(vh))
 		procSetCursorPos.Call(uintptr(targetX), uintptr(targetY))
+
 	case "mrel":
 		procMouseEvent.Call(MOUSEEVENTF_MOVE, uintptr(int32(msg.DX)), uintptr(int32(msg.DY)), 0, 0)
+
 	case "md":
 		var flag uintptr
 		switch msg.Button {
@@ -234,6 +286,7 @@ func handleInputEvent(msg InputMessage, screenW, screenH int) {
 		if flag != 0 {
 			procMouseEvent.Call(flag, 0, 0, 0, 0)
 		}
+
 	case "mu":
 		var flag uintptr
 		switch msg.Button {
@@ -247,21 +300,31 @@ func handleInputEvent(msg InputMessage, screenW, screenH int) {
 		if flag != 0 {
 			procMouseEvent.Call(flag, 0, 0, 0, 0)
 		}
+
 	case "mw":
-		procMouseEvent.Call(MOUSEEVENTF_WHEEL, 0, 0, uintptr(uint32(msg.DeltaY*120)), 0)
+		// msg.Wheel contains scroll direction (-1 or 1)
+		procMouseEvent.Call(MOUSEEVENTF_WHEEL, 0, 0, uintptr(uint32(msg.Wheel*120)), 0)
+
 	case "kd":
 		vk := getVK(msg.Key, msg.Code)
 		if vk != 0 {
 			procKeybdEvent.Call(vk, 0, 0, 0)
 		}
+
 	case "ku":
 		vk := getVK(msg.Key, msg.Code)
 		if vk != 0 {
 			procKeybdEvent.Call(vk, 0, KEYEVENTF_KEYUP, 0)
 		}
+
 	case "char":
 		if len(msg.Str) > 0 {
-			pasteText(msg.Str)
+			sendUnicodeString(msg.Str)
 		}
+
+	case "lock":
+		// Lock workstation via official Windows API
+		logToFile("[Input] Блокировка рабочей станции (LockWorkStation)")
+		procLockWorkStation.Call()
 	}
 }

@@ -9,24 +9,83 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+	"sync"
+	"time"
 )
 
-var tunnelURLRegex = regexp.MustCompile(`https://[a-zA-Z0-9-.]+\.trycloudflare\.com`)
+var (
+	tunnelURLRegex = regexp.MustCompile(`https://[a-zA-Z0-9-.]+\.trycloudflare\.com`)
+	logMu          sync.Mutex
+	logFile        *os.File
+	logOnce        sync.Once
+)
 
+func getLogFile() *os.File {
+	logOnce.Do(func() {
+		logPath := filepath.Join(getExecutableDir(), "deskremote.log")
+		f, err := os.OpenFile(logPath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+		if err == nil {
+			logFile = f
+		}
+	})
+	return logFile
+}
+
+// logToFile writes messages to deskremote.log in a thread-safe manner with timestamps.
 func logToFile(msg string) {
-	logPath := filepath.Join(getExecutableDir(), "deskremote.log")
-	f, err := os.OpenFile(logPath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
-	if err == nil {
-		defer f.Close()
-		_, _ = f.WriteString(msg + "\n")
+	logMu.Lock()
+	defer logMu.Unlock()
+
+	f := getLogFile()
+	if f != nil {
+		timestamp := time.Now().Format("2006/01/02 15:04:05")
+		_, _ = f.WriteString(fmt.Sprintf("[%s] %s\n", timestamp, msg))
+		_ = f.Sync()
+	}
+}
+
+func getCloudflaredPath() string {
+	if p := filepath.Join(getExecutableDir(), "cloudflared.exe"); fileExists(p) {
+		if abs, err := filepath.Abs(p); err == nil { return abs }
+		return p
+	}
+	if p := filepath.Join(".", "cloudflared.exe"); fileExists(p) {
+		if abs, err := filepath.Abs(p); err == nil { return abs }
+		return p
+	}
+	if p := `C:\DeskRemote\cloudflared.exe`; fileExists(p) {
+		return p
+	}
+	if path, err := exec.LookPath("cloudflared"); err == nil {
+		return path
+	}
+	return "cloudflared"
+}
+
+func fileExists(p string) bool {
+	_, err := os.Stat(p)
+	return err == nil
+}
+
+// checkDependencies verifies that required binaries exist.
+func checkDependencies() {
+	ffmpegPath := getFFmpegPath()
+	if !fileExists(ffmpegPath) {
+		logToFile("[ВНИМАНИЕ] ffmpeg.exe не найден! Захват экрана работать не будет.")
+	} else {
+		logToFile(fmt.Sprintf("[Deps] ffmpeg обнаружен: %s", ffmpegPath))
+	}
+
+	cloudflaredPath := getCloudflaredPath()
+	if !fileExists(cloudflaredPath) {
+		logToFile("[ВНИМАНИЕ] cloudflared.exe не найден! Удаленный туннель Cloudflare запустить не удастся.")
+	} else {
+		logToFile(fmt.Sprintf("[Deps] cloudflared обнаружен: %s", cloudflaredPath))
 	}
 }
 
 func startCloudflareTunnel(ctx context.Context, token string, onURLReady func(string)) {
-	cloudflaredPath := filepath.Join(getExecutableDir(), "cloudflared.exe")
-	if _, err := os.Stat(cloudflaredPath); err != nil {
-		cloudflaredPath = "cloudflared"
-	}
+	cloudflaredPath := getCloudflaredPath()
 	logToFile(fmt.Sprintf("[Tunnel] Запуск %s", cloudflaredPath))
 
 	var args []string
@@ -45,7 +104,7 @@ func startCloudflareTunnel(ctx context.Context, token string, onURLReady func(st
 	stdout, _ := cmd.StdoutPipe()
 
 	if err := cmd.Start(); err != nil {
-		logToFile(fmt.Sprintf("[Tunnel] Ошибка Start: %v", err))
+		logToFile(fmt.Sprintf("[Tunnel] Ошибка Start cloudflared: %v (проверьте наличие бинарника)", err))
 		return
 	}
 	logToFile("[Tunnel] Процесс cloudflared запущен!")
@@ -73,4 +132,5 @@ func startCloudflareTunnel(ctx context.Context, token string, onURLReady func(st
 	if cmd.Process != nil {
 		_ = cmd.Process.Kill()
 	}
+	_ = cmd.Wait()
 }

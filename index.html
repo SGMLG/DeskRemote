@@ -4,6 +4,15 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
     <title>DeskRemote Stream</title>
+    <!-- PWA & Mobile Web App -->
+    <link rel="manifest" href="/manifest.json">
+    <meta name="theme-color" content="#070b14">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="DeskRemote">
+    <link rel="icon" type="image/svg+xml" href="/icon.svg">
+    <link rel="apple-touch-icon" href="/icon.svg">
     <style>
         :root {
             --bg-base: #070b14;
@@ -541,8 +550,10 @@
         /* ─── Карточка Экранной Клавиатуры ─── */
         #keyboardCard {
             width: min(720px, calc(100vw - 20px));
-            left: 50%;
-            transform: translateX(-50%);
+            left: 0;
+            right: 0;
+            margin-left: auto;
+            margin-right: auto;
             padding: 12px;
         }
 
@@ -791,7 +802,7 @@
             <div class="status-dot" id="statusDot"></div>
             <span id="statusText">Ожидание PIN...</span>
             <span class="telemetry-tag" id="latencyBadge">-- ms</span>
-            <span class="telemetry-tag">60 FPS</span>
+            <span class="telemetry-tag" id="fpsBadge">-- FPS</span>
             <span class="hd-tag">HD</span>
         </div>
 
@@ -928,9 +939,11 @@
                 </button>
             </div>
 
-            <!-- Правая группа: HD, Fullscreen, Logout -->
+            <!-- Правая группа: Звук, Fullscreen, Logout -->
             <div class="dock-group">
-                <span class="hd-tag">HD</span>
+                <button type="button" id="pillAudio" class="dock-pill icon-only" title="Звук (Вкл/Выкл)" onclick="toggleAudio()">
+                    <span id="audioIcon" style="font-size: 15px;">🔇</span>
+                </button>
                 <button type="button" id="fsBtn" class="dock-pill icon-only" title="Полноэкранный режим" onclick="toggleFullScreen()">
                     <svg id="fsIcon" viewBox="0 0 24 24"><path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"></path></svg>
                 </button>
@@ -1086,7 +1099,7 @@
                 case 'explorer': sendCombo(["MetaLeft", "KeyE"]); break;
                 case 'copy': sendCombo(["ControlLeft", "KeyC"]); break;
                 case 'paste': sendCombo(["ControlLeft", "KeyV"]); break;
-                case 'lock': sendCombo(["MetaLeft", "KeyL"]); break;
+                case 'lock': sendInput({ t: "lock" }); break;
                 case 'esc': sendCombo(["Escape"]); break;
             }
             closeActiveCard();
@@ -1145,15 +1158,26 @@
             trackpadZone.setPointerCapture(e.pointerId);
         });
 
+        let tpAccumDX = 0, tpAccumDY = 0, tpTicking = false;
+
         trackpadZone.addEventListener('pointermove', (e) => {
             if (!isTpDragging) return;
-            const dx = (e.clientX - tpLastX) * 1.5;
-            const dy = (e.clientY - tpLastY) * 1.5;
+            tpAccumDX += (e.clientX - tpLastX) * 1.5;
+            tpAccumDY += (e.clientY - tpLastY) * 1.5;
             tpLastX = e.clientX;
             tpLastY = e.clientY;
 
-            // Передаем относительное смещение курсора
-            sendInput({ t: "mrel", dx: dx, dy: dy });
+            if (!tpTicking) {
+                window.requestAnimationFrame(() => {
+                    if (tpAccumDX !== 0 || tpAccumDY !== 0) {
+                        sendInput({ t: "mrel", dx: tpAccumDX, dy: tpAccumDY });
+                        tpAccumDX = 0;
+                        tpAccumDY = 0;
+                    }
+                    tpTicking = false;
+                });
+                tpTicking = true;
+            }
         });
 
         ['pointerup', 'pointercancel'].forEach(evt => {
@@ -1380,9 +1404,13 @@
             }
         }
 
-        function showTouchRipple(x, y) {
+        function showTouchRipple(x, y, isRightClick = false) {
             const ripple = document.createElement('div');
             ripple.className = 'touch-ripple';
+            if (isRightClick) {
+                ripple.style.borderColor = 'var(--accent-amber)';
+                ripple.style.background = 'rgba(245, 158, 11, 0.25)';
+            }
             ripple.style.left = x + 'px';
             ripple.style.top = y + 'px';
             document.body.appendChild(ripple);
@@ -1419,10 +1447,68 @@
         document.addEventListener('fullscreenchange', updateFsIcon);
         document.addEventListener('webkitfullscreenchange', updateFsIcon);
 
+        /* ─── УПРАВЛЕНИЕ АУДИОПОТОКОМ ─── */
+        let isAudioEnabled = false;
+        function toggleAudio() {
+            isAudioEnabled = !isAudioEnabled;
+            video.muted = !isAudioEnabled;
+            const pill = document.getElementById('pillAudio');
+            const icon = document.getElementById('audioIcon');
+            if (isAudioEnabled) {
+                video.volume = 1.0;
+                video.play().catch(e => console.log('Audio play error:', e));
+                if (icon) icon.textContent = '🔊';
+                if (pill) pill.classList.add('active');
+                setStatus("Звук ПК включен", 'connected');
+                setTimeout(() => setStatus("В сети", 'connected'), 2000);
+            } else {
+                if (icon) icon.textContent = '🔇';
+                if (pill) pill.classList.remove('active');
+                setStatus("Звук выключен", 'connected');
+                setTimeout(() => setStatus("В сети", 'connected'), 2000);
+            }
+        }
+
+        /* ─── SCREEN WAKELOCK (ПРЕДОТВРАЩЕНИЕ БЛОКИРОВКИ ЭКРАНА) ─── */
+        let wakeLock = null;
+        async function acquireWakeLock() {
+            try {
+                if ('wakeLock' in navigator && !wakeLock) {
+                    wakeLock = await navigator.wakeLock.request('screen');
+                    wakeLock.addEventListener('release', () => {
+                        wakeLock = null;
+                    });
+                }
+            } catch (e) {}
+        }
+
+        function releaseWakeLock() {
+            if (wakeLock) {
+                wakeLock.release().catch(() => {});
+                wakeLock = null;
+            }
+        }
+
+        document.addEventListener('visibilitychange', async () => {
+            if (document.visibilityState === 'visible' && pc && pc.connectionState === 'connected') {
+                await acquireWakeLock();
+            }
+        });
+
+        let isUserLoggedOut = false;
+        let reconnectTimer = null;
+        let statsInterval = null;
+        let lastDecodedFrames = 0;
+        let lastStatsCheck = 0;
+
         function handleLogout() {
+            isUserLoggedOut = true;
+            releaseWakeLock();
+            clearTimeout(reconnectTimer);
+            clearInterval(statsInterval);
             safeStorageRemove('deskremote_pin');
-            if (ws) ws.close();
-            if (pc) pc.close();
+            if (ws) { ws.close(); ws = null; }
+            if (pc) { pc.close(); pc = null; }
             authModal.style.display = 'flex';
             pinInput.value = '';
             pinInput.focus();
@@ -1432,6 +1518,8 @@
 
         /* ─── СЕТЬ И АВТОРИЗАЦИЯ ─── */
         function initConnection(pin) {
+            isUserLoggedOut = false;
+            clearTimeout(reconnectTimer);
             authError.textContent = "";
             authForm.classList.remove('shake');
             loginBtn.textContent = "Подключение...";
@@ -1459,19 +1547,28 @@
                 ws.onerror = () => {
                     loginBtn.textContent = "Подключиться";
                     loginBtn.disabled = false;
-                    authModal.style.display = 'flex';
-                    authError.textContent = "Неверный PIN или сервер недоступен";
-                    authForm.classList.add('shake');
+                    if (authModal.style.display !== 'none') {
+                        authError.textContent = "Неверный PIN или сервер недоступен";
+                        authForm.classList.add('shake');
+                    }
                     setStatus("Ошибка доступа", 'error');
-                    safeStorageRemove('deskremote_pin');
-                    if (pc) pc.close();
                 };
 
                 ws.onclose = () => {
                     loginBtn.textContent = "Подключиться";
                     loginBtn.disabled = false;
-                    if (authModal.style.display === 'none') {
-                        setStatus("Соединение закрыто", 'error');
+                    clearInterval(statsInterval);
+                    if (!isUserLoggedOut && authModal.style.display === 'none') {
+                        setStatus("Связь потеряна. Переподключение...", 'error');
+                        clearTimeout(reconnectTimer);
+                        reconnectTimer = setTimeout(() => {
+                            if (!isUserLoggedOut && authModal.style.display === 'none') {
+                                const p = safeStorageGet('deskremote_pin');
+                                if (p) initConnection(p);
+                            }
+                        }, 2500);
+                    } else if (authModal.style.display === 'none') {
+                        setStatus("Соединение закрыто", 'normal');
                     }
                 };
             } catch (err) {
@@ -1512,29 +1609,44 @@
         /* ─── WEBRTC ПОТОК ─── */
         async function setupWebRTC() {
             try {
-                if (pc) pc.close();
+                if (pc) {
+                    inputChannel = null;
+                    pc.close();
+                }
                 pc = new RTCPeerConnection(iceConfig);
+
+                let pendingCandidates = [];
+                let isRemoteSet = false;
+
+                let remoteStream = new MediaStream();
+                video.srcObject = remoteStream;
 
                 pc.ontrack = (event) => {
                     if (event.streams && event.streams[0]) {
                         video.srcObject = event.streams[0];
                     } else {
-                        video.srcObject = new MediaStream([event.track]);
+                        remoteStream.addTrack(event.track);
                     }
-                    video.muted = true;
-                    video.play().then(() => {
-                        setStatus("В сети", 'connected');
-                        latencyBadge.textContent = "12 ms";
-                    }).catch(() => {
-                        setStatus("Коснитесь для старта", 'normal');
-                    });
+                    if (event.track.kind === 'video') {
+                        video.muted = !isAudioEnabled;
+                        video.play().then(() => {
+                            setStatus("В сети", 'connected');
+                            startTelemetryMonitoring();
+                        }).catch(() => {
+                            setStatus("Коснитесь для старта", 'normal');
+                        });
+                    }
                 };
 
                 pc.onconnectionstatechange = () => {
                     if (pc.connectionState === 'connected') {
                         setStatus("В сети", 'connected');
+                        startTelemetryMonitoring();
+                        acquireWakeLock();
                     } else if (pc.connectionState === 'disconnected' || pc.connectionState === 'failed') {
-                        setStatus("Переподключение...", 'error');
+                        setStatus("Потеря связи...", 'error');
+                        clearInterval(statsInterval);
+                        releaseWakeLock();
                     }
                 };
 
@@ -1548,6 +1660,7 @@
                 };
 
                 pc.addTransceiver('video', { direction: 'recvonly' });
+                pc.addTransceiver('audio', { direction: 'recvonly' });
                 const offer = await pc.createOffer();
                 await pc.setLocalDescription(offer);
                 if (ws && ws.readyState === WebSocket.OPEN) {
@@ -1559,14 +1672,65 @@
                         const msg = JSON.parse(e.data);
                         if (msg.type === "answer") {
                             await pc.setRemoteDescription(new RTCSessionDescription({ type: 'answer', sdp: msg.sdp }));
+                            isRemoteSet = true;
+                            for (const cand of pendingCandidates) {
+                                try { await pc.addIceCandidate(new RTCIceCandidate(cand)); } catch(err){}
+                            }
+                            pendingCandidates = [];
                         } else if (msg.type === "candidate" && msg.candidate) {
-                            await pc.addIceCandidate(new RTCIceCandidate(msg.candidate));
+                            if (!isRemoteSet) {
+                                pendingCandidates.push(msg.candidate);
+                            } else {
+                                try { await pc.addIceCandidate(new RTCIceCandidate(msg.candidate)); } catch(err){}
+                            }
                         }
                     } catch (err) {}
                 };
             } catch (err) {
                 setStatus("Ошибка WebRTC: " + err.message, 'error');
             }
+        }
+
+        function startTelemetryMonitoring() {
+            clearInterval(statsInterval);
+            statsInterval = setInterval(async () => {
+                if (!pc || pc.connectionState !== 'connected') return;
+                try {
+                    const stats = await pc.getStats();
+                    let currentFps = 0;
+                    let currentRtt = null;
+                    const now = performance.now();
+
+                    stats.forEach(report => {
+                        if (report.type === 'inbound-rtp' && report.kind === 'video') {
+                            if (report.framesPerSecond !== undefined) {
+                                currentFps = Math.round(report.framesPerSecond);
+                            } else if (report.framesDecoded !== undefined) {
+                                if (lastStatsCheck > 0) {
+                                    const timeDiff = (now - lastStatsCheck) / 1000;
+                                    const frameDiff = report.framesDecoded - lastDecodedFrames;
+                                    if (timeDiff > 0) currentFps = Math.round(frameDiff / timeDiff);
+                                }
+                                lastDecodedFrames = report.framesDecoded;
+                                lastStatsCheck = now;
+                            }
+                        }
+                        if (report.type === 'candidate-pair' && report.state === 'succeeded') {
+                            if (report.currentRoundTripTime !== undefined) {
+                                currentRtt = Math.round(report.currentRoundTripTime * 1000);
+                            }
+                        }
+                    });
+
+                    if (currentRtt !== null) {
+                        latencyBadge.textContent = currentRtt + ' ms';
+                    }
+                    if (currentFps > 0) {
+                        const fpsBadge = document.getElementById('fpsBadge');
+                        if (fpsBadge) fpsBadge.textContent = currentFps + ' FPS';
+                    }
+                } catch(e) {}
+            }, 1000);
         }
 
         function sendInput(data) {
@@ -1592,12 +1756,19 @@
             const clientX = e.clientX !== undefined ? e.clientX : (e.touches && e.touches[0] ? e.touches[0].clientX : 0);
             const clientY = e.clientY !== undefined ? e.clientY : (e.touches && e.touches[0] ? e.touches[0].clientY : 0);
 
+            if (renderW <= 0 || renderH <= 0) {
+                return { x: 0.5, y: 0.5, rawX: clientX, rawY: clientY };
+            }
+
             const clickX = clientX - rect.left - offsetX;
             const clickY = clientY - rect.top - offsetY;
 
+            const normX = Math.max(0, Math.min(1, clickX / renderW));
+            const normY = Math.max(0, Math.min(1, clickY / renderH));
+
             return {
-                x: Math.max(0, Math.min(1, clickX / renderW)),
-                y: Math.max(0, Math.min(1, clickY / renderH)),
+                x: isNaN(normX) ? 0.5 : normX,
+                y: isNaN(normY) ? 0.5 : normY,
                 rawX: clientX,
                 rawY: clientY
             };
@@ -1621,7 +1792,7 @@
             video.addEventListener('mousedown', (e) => {
                 video.play().catch(() => {});
                 const coords = getNormalizedCoords(e);
-                showTouchRipple(coords.rawX, coords.rawY);
+                showTouchRipple(coords.rawX, coords.rawY, e.button === 2);
                 sendInput({ t: "md", b: e.button });
             });
 
@@ -1629,36 +1800,81 @@
             video.addEventListener('contextmenu', (e) => e.preventDefault());
             video.addEventListener('wheel', (e) => {
                 e.preventDefault();
-                sendInput({ t: "mw", dy: e.deltaY < 0 ? 1 : -1 });
+                // Send wheel field matching backend
+                sendInput({ t: "mw", wheel: e.deltaY < 0 ? 1 : -1 });
             }, { passive: false });
 
             // Сенсорное управление (Смартфон / Планшет)
+            let touchStartX = 0, touchStartY = 0;
+            let isTouchDragging = false;
+            let isLongPressTriggered = false;
+            let longPressTimer = null;
+
             video.addEventListener('touchstart', (e) => {
                 video.play().catch(() => {});
                 if (e.touches.length === 1) {
-                    const coords = getNormalizedCoords(e);
-                    showTouchRipple(coords.rawX, coords.rawY);
-                    sendInput({ t: "mm", x: coords.x, y: coords.y });
-                    sendInput({ t: "md", b: 0 });
+                    const t = e.touches[0];
+                    touchStartX = t.clientX;
+                    touchStartY = t.clientY;
+                    isTouchDragging = false;
+                    isLongPressTriggered = false;
+
+                    clearTimeout(longPressTimer);
+                    longPressTimer = setTimeout(() => {
+                        isLongPressTriggered = true;
+                        const coords = getNormalizedCoords(e);
+                        showTouchRipple(coords.rawX, coords.rawY, true);
+                        if (navigator.vibrate) navigator.vibrate(50);
+                        // Right click via long press
+                        sendInput({ t: "mm", x: coords.x, y: coords.y });
+                        sendInput({ t: "md", b: 2 });
+                        setTimeout(() => sendInput({ t: "mu", b: 2 }), 40);
+                    }, 500);
                 }
             }, { passive: false });
 
             video.addEventListener('touchmove', (e) => {
                 if (e.touches.length === 1) {
-                    e.preventDefault();
-                    if (!ticking) {
-                        window.requestAnimationFrame(() => {
-                            const coords = getNormalizedCoords(e);
+                    const t = e.touches[0];
+                    const dist = Math.hypot(t.clientX - touchStartX, t.clientY - touchStartY);
+                    if (dist > 8) {
+                        clearTimeout(longPressTimer);
+                        e.preventDefault();
+                        const coords = getNormalizedCoords(e);
+                        if (!isTouchDragging) {
+                            isTouchDragging = true;
                             sendInput({ t: "mm", x: coords.x, y: coords.y });
-                            ticking = false;
-                        });
-                        ticking = true;
+                            sendInput({ t: "md", b: 0 });
+                        } else if (!ticking) {
+                            window.requestAnimationFrame(() => {
+                                sendInput({ t: "mm", x: coords.x, y: coords.y });
+                                ticking = false;
+                            });
+                            ticking = true;
+                        }
                     }
                 }
             }, { passive: false });
 
             video.addEventListener('touchend', (e) => {
-                sendInput({ t: "mu", b: 0 });
+                clearTimeout(longPressTimer);
+                if (isLongPressTriggered) {
+                    isLongPressTriggered = false;
+                    return;
+                }
+                if (isTouchDragging) {
+                    isTouchDragging = false;
+                    sendInput({ t: "mu", b: 0 });
+                    return;
+                }
+                // Quick clean Tap without dragging -> Left Click
+                const coords = getNormalizedCoords({ clientX: touchStartX, clientY: touchStartY });
+                showTouchRipple(coords.rawX, coords.rawY, false);
+                sendInput({ t: "mm", x: coords.x, y: coords.y });
+                sendInput({ t: "md", b: 0 });
+                setTimeout(() => {
+                    sendInput({ t: "mu", b: 0 });
+                }, 35);
             }, { passive: false });
         }
     </script>

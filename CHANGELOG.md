@@ -5,6 +5,21 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.4.0] - 2026-09-04
+
+### Added
+- **Hardware Video Acceleration & 60 FPS**:
+  - Automatic GPU encoder detection with dynamic probing: priority for AMD AMF (`h264_amf`), NVIDIA NVENC (`h264_nvenc`), Intel QuickSync (`h264_qsv`), with automatic fallback to optimized software `libx264`.
+  - Upgraded video stream to **60 FPS** (16.6ms frame pacing) with zero-latency tuning (`-bf 0`, `-tune zerolatency` / `-usage ultralowlatency`).
+  - Standardized on H.264 Constrained Baseline Profile (Level 3.1, `profile-level-id=42e01f`) for 100% native mobile hardware decoding without battery drain.
+- **System Audio Streaming (DirectShow -> WebRTC Opus)**:
+  - Added dedicated `AudioBroadcaster` singleton capturing Windows audio via DirectShow and encoding to low-delay Opus stereo at 64 kbps.
+  - Multi-track WebRTC negotiation (`pc.addTransceiver('audio', ...)`) binding both video and audio into a single synchronized `MediaStream`.
+  - Added interactive Audio Toggle button (🔊 / 🔇) in the floating dock with mobile autoplay compliance and state persistence.
+- **Progressive Web App (PWA) & Screen WakeLock**:
+  - Native PWA manifest (`/manifest.json`) and vector app icon (`/icon.svg`) for installing DeskRemote directly to home screen (standalone mode without browser URL bars).
+  - Integrated Screen WakeLock API (`navigator.wakeLock.request('screen')`) to prevent mobile screens from sleeping or dimming while remotely controlling the PC, with auto-recovery on tab visibility change.
+
 ## [1.3.0] - 2026-09-03
 
 ### Added

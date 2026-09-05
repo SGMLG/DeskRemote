@@ -15,8 +15,9 @@ cloudflared.exe
 bin/
 dist/
 
-# Logs
+# Logs and Test Outputs
 *.log
+tests/*.png
 
 # OS & Editor
 .DS_Store
@@ -24,3 +25,4 @@ Thumbs.db
 .vscode/
 .idea/
 *.swp
+
