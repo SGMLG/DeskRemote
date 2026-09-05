@@ -10,6 +10,7 @@ import (
 	"regexp"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 )
 
@@ -96,6 +97,7 @@ func startCloudflareTunnel(ctx context.Context, token string, onURLReady func(st
 	}
 
 	cmd := exec.CommandContext(ctx, cloudflaredPath, args...)
+	cmd.SysProcAttr = &syscall.SysProcAttr{HideWindow: true}
 	stderr, err := cmd.StderrPipe()
 	if err != nil {
 		logToFile(fmt.Sprintf("[Tunnel] Ошибка StderrPipe: %v", err))

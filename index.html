@@ -1492,8 +1492,61 @@
         document.addEventListener('visibilitychange', async () => {
             if (document.visibilityState === 'visible' && pc && pc.connectionState === 'connected') {
                 await acquireWakeLock();
+                // Auto-resume video after returning from background
+                if (video.paused && video.srcObject) {
+                    video.muted = true;
+                    video.play().then(() => {
+                        video.muted = !isAudioEnabled;
+                        hideResumeOverlay();
+                        setStatus("В сети", 'connected');
+                    }).catch(() => {
+                        showResumeOverlay();
+                    });
+                }
             }
         });
+
+        function showResumeOverlay(err) {
+            let overlay = document.getElementById('resume-overlay');
+            if (!overlay) {
+                overlay = document.createElement('div');
+                overlay.id = 'resume-overlay';
+                overlay.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(11,19,41,0.92);display:flex;flex-direction:column;align-items:center;justify-content:center;z-index:9998;cursor:pointer;backdrop-filter:blur(6px);-webkit-tap-highlight-color:transparent;touch-action:manipulation;padding:20px;box-sizing:border-box;';
+                
+                const resumeHandler = (e) => {
+                    if (e) e.preventDefault();
+                    video.muted = true;
+                    const subText = document.getElementById('resume-overlay-sub');
+                    if (subText) subText.textContent = "Запуск потока...";
+                    video.play().then(() => {
+                        video.muted = !isAudioEnabled;
+                        hideResumeOverlay();
+                        setStatus("В сети", 'connected');
+                    }).catch((playErr) => {
+                        console.error("Resume play failed:", playErr);
+                        if (subText) {
+                            subText.innerHTML = `<span style="color:#ef4444;font-weight:600">Ошибка: ${playErr.name}</span><br><span style="font-size:12px;opacity:0.8">${playErr.message || 'Проверьте поддержку H.264'}</span>`;
+                        }
+                    });
+                };
+
+                overlay.addEventListener('click', resumeHandler);
+                overlay.addEventListener('touchend', resumeHandler);
+                document.body.appendChild(overlay);
+            }
+
+            const errMsg = err ? `<br><span style="font-size:13px;color:#f87171;margin-top:8px;display:inline-block;">${err.name || ''}: ${err.message || ''}</span>` : '';
+            overlay.innerHTML = `<div style="text-align:center;color:#fff;pointer-events:none;">
+                <div style="font-size:64px;margin-bottom:16px;">▶</div>
+                <div style="font-size:18px;font-weight:600;">Нажмите, чтобы возобновить</div>
+                <div id="resume-overlay-sub" style="font-size:13px;margin-top:8px;opacity:0.85;">${errMsg}</div>
+            </div>`;
+        }
+
+        function hideResumeOverlay() {
+            const el = document.getElementById('resume-overlay');
+            if (el) el.remove();
+        }
 
         let isUserLoggedOut = false;
         let reconnectTimer = null;
@@ -1618,22 +1671,42 @@
                 let pendingCandidates = [];
                 let isRemoteSet = false;
 
-                let remoteStream = new MediaStream();
-                video.srcObject = remoteStream;
+                let remoteStream = null;
+
+                video.onplaying = () => {
+                    hideResumeOverlay();
+                    setStatus("В сети", 'connected');
+                };
+
+                video.onerror = () => {
+                    const err = video.error;
+                    const msg = err ? `Код ${err.code}: ${err.message}` : "Ошибка видео";
+                    showResumeOverlay({ name: "Ошибка декодера", message: msg });
+                };
 
                 pc.ontrack = (event) => {
+                    console.log('[WebRTC] ontrack:', event.track.kind);
                     if (event.streams && event.streams[0]) {
                         video.srcObject = event.streams[0];
                     } else {
+                        if (!remoteStream) {
+                            remoteStream = new MediaStream();
+                            video.srcObject = remoteStream;
+                        }
                         remoteStream.addTrack(event.track);
                     }
+
                     if (event.track.kind === 'video') {
-                        video.muted = !isAudioEnabled;
+                        video.muted = true;
                         video.play().then(() => {
+                            video.muted = !isAudioEnabled;
                             setStatus("В сети", 'connected');
                             startTelemetryMonitoring();
-                        }).catch(() => {
+                            hideResumeOverlay();
+                        }).catch((err) => {
+                            console.warn("Autoplay blocked:", err);
                             setStatus("Коснитесь для старта", 'normal');
+                            showResumeOverlay(err);
                         });
                     }
                 };
@@ -1757,11 +1830,13 @@
             const clientY = e.clientY !== undefined ? e.clientY : (e.touches && e.touches[0] ? e.touches[0].clientY : 0);
 
             if (renderW <= 0 || renderH <= 0) {
-                return { x: 0.5, y: 0.5, rawX: clientX, rawY: clientY };
+                return { x: 0.5, y: 0.5, rawX: clientX, rawY: clientY, oob: true };
             }
 
             const clickX = clientX - rect.left - offsetX;
             const clickY = clientY - rect.top - offsetY;
+
+            const oob = clickX < 0 || clickX > renderW || clickY < 0 || clickY > renderH;
 
             const normX = Math.max(0, Math.min(1, clickX / renderW));
             const normY = Math.max(0, Math.min(1, clickY / renderH));
@@ -1770,11 +1845,15 @@
                 x: isNaN(normX) ? 0.5 : normX,
                 y: isNaN(normY) ? 0.5 : normY,
                 rawX: clientX,
-                rawY: clientY
+                rawY: clientY,
+                oob: oob
             };
         }
 
+        let eventsBound = false;
         function bindInputEvents() {
+            if (eventsBound) return;
+            eventsBound = true;
             let ticking = false;
 
             // Мышь (ПК)
@@ -1782,7 +1861,9 @@
                 if (!ticking) {
                     window.requestAnimationFrame(() => {
                         const coords = getNormalizedCoords(e);
-                        sendInput({ t: "mm", x: coords.x, y: coords.y });
+                        if (!coords.oob) {
+                            sendInput({ t: "mm", x: coords.x, y: coords.y });
+                        }
                         ticking = false;
                     });
                     ticking = true;
@@ -1792,6 +1873,7 @@
             video.addEventListener('mousedown', (e) => {
                 video.play().catch(() => {});
                 const coords = getNormalizedCoords(e);
+                if (coords.oob) return; // Prevent clicking outside video bounds
                 showTouchRipple(coords.rawX, coords.rawY, e.button === 2);
                 sendInput({ t: "md", b: e.button });
             });
@@ -1800,7 +1882,6 @@
             video.addEventListener('contextmenu', (e) => e.preventDefault());
             video.addEventListener('wheel', (e) => {
                 e.preventDefault();
-                // Send wheel field matching backend
                 sendInput({ t: "mw", wheel: e.deltaY < 0 ? 1 : -1 });
             }, { passive: false });
 
@@ -1809,10 +1890,17 @@
             let isTouchDragging = false;
             let isLongPressTriggered = false;
             let longPressTimer = null;
+            let isValidTouchStart = false;
 
             video.addEventListener('touchstart', (e) => {
                 video.play().catch(() => {});
                 if (e.touches.length === 1) {
+                    const coords = getNormalizedCoords(e);
+                    if (coords.oob) {
+                        isValidTouchStart = false;
+                        return;
+                    }
+                    isValidTouchStart = true;
                     const t = e.touches[0];
                     touchStartX = t.clientX;
                     touchStartY = t.clientY;
@@ -1822,7 +1910,6 @@
                     clearTimeout(longPressTimer);
                     longPressTimer = setTimeout(() => {
                         isLongPressTriggered = true;
-                        const coords = getNormalizedCoords(e);
                         showTouchRipple(coords.rawX, coords.rawY, true);
                         if (navigator.vibrate) navigator.vibrate(50);
                         // Right click via long press
@@ -1839,6 +1926,7 @@
                     const dist = Math.hypot(t.clientX - touchStartX, t.clientY - touchStartY);
                     if (dist > 8) {
                         clearTimeout(longPressTimer);
+                        if (!isValidTouchStart) return; // Ignore drag if started OOB
                         e.preventDefault();
                         const coords = getNormalizedCoords(e);
                         if (!isTouchDragging) {
@@ -1858,6 +1946,8 @@
 
             video.addEventListener('touchend', (e) => {
                 clearTimeout(longPressTimer);
+                if (!isValidTouchStart) return;
+                
                 if (isLongPressTriggered) {
                     isLongPressTriggered = false;
                     return;

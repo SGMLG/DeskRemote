@@ -25,4 +25,5 @@ Thumbs.db
 .vscode/
 .idea/
 *.swp
+all_*.txt
 

@@ -239,19 +239,49 @@ func handleSignaling(w http.ResponseWriter, r *http.Request) {
 		},
 	}
 
-	pc, err := webrtc.NewPeerConnection(config)
+	mediaEngine := &webrtc.MediaEngine{}
+	_ = mediaEngine.RegisterCodec(webrtc.RTPCodecParameters{
+		RTPCodecCapability: webrtc.RTPCodecCapability{
+			MimeType:    webrtc.MimeTypeOpus,
+			ClockRate:   48000,
+			Channels:    2,
+			SDPFmtpLine: "minptime=10;useinbandfec=1",
+		},
+		PayloadType: 111,
+	}, webrtc.RTPCodecTypeAudio)
+
+	h264Codecs := []struct {
+		payloadType webrtc.PayloadType
+		fmtp        string
+	}{
+		{102, "level-asymmetry-allowed=1;packetization-mode=1;profile-level-id=42e02a"}, // Constrained Baseline 4.2 (1080p60)
+		{104, "level-asymmetry-allowed=1;packetization-mode=1;profile-level-id=42002a"}, // Baseline 4.2
+		{106, "level-asymmetry-allowed=1;packetization-mode=1;profile-level-id=64002a"}, // High 4.2
+		{108, "level-asymmetry-allowed=1;packetization-mode=1;profile-level-id=42e01f"}, // Constrained Baseline 3.1
+		{110, "level-asymmetry-allowed=1;packetization-mode=1;profile-level-id=42001f"}, // Baseline 3.1
+	}
+	for _, c := range h264Codecs {
+		_ = mediaEngine.RegisterCodec(webrtc.RTPCodecParameters{
+			RTPCodecCapability: webrtc.RTPCodecCapability{
+				MimeType:    webrtc.MimeTypeH264,
+				ClockRate:   90000,
+				SDPFmtpLine: c.fmtp,
+			},
+			PayloadType: c.payloadType,
+		}, webrtc.RTPCodecTypeVideo)
+	}
+
+	api := webrtc.NewAPI(webrtc.WithMediaEngine(mediaEngine))
+	pc, err := api.NewPeerConnection(config)
 	if err != nil {
 		logToFile(fmt.Sprintf("[WebRTC] Ошибка NewPeerConnection: %v", err))
 		return
 	}
 	defer pc.Close()
 
-	// High-performance H.264 video track (Constrained Baseline 3.1)
+	// Universal H.264 video track (adapts to client's negotiated profile/level)
 	videoTrack, err := webrtc.NewTrackLocalStaticSample(
-		webrtc.RTPCodecCapability{
-			MimeType:    webrtc.MimeTypeH264,
-			SDPFmtpLine: "level-asymmetry-allowed=1;packetization-mode=1;profile-level-id=42e01f",
-		},
+		webrtc.RTPCodecCapability{MimeType: webrtc.MimeTypeH264},
 		"video",
 		"desktop-stream",
 	)

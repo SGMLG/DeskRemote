@@ -12,6 +12,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"sync"
+	"syscall"
 	"time"
 
 	"github.com/pion/webrtc/v4"
@@ -81,6 +82,7 @@ func testEncoder(ffmpegPath, encoder string, extraArgs ...string) bool {
 	cmdArgs = append(cmdArgs, "-frames:v", "1", "-f", "null", "-")
 
 	cmd := exec.CommandContext(ctx, ffmpegPath, cmdArgs...)
+	cmd.SysProcAttr = &syscall.SysProcAttr{HideWindow: true}
 	return cmd.Run() == nil
 }
 
@@ -321,6 +323,7 @@ func (b *ScreenBroadcaster) captureLoop(ctx context.Context, gen int) {
 	cmdArgs := append(baseArgs, encoderConfig.Args...)
 
 	cmd := exec.CommandContext(ctx, ffmpegPath, cmdArgs...)
+	cmd.SysProcAttr = &syscall.SysProcAttr{HideWindow: true}
 
 	b.mu.Lock()
 	b.cmd = cmd
@@ -518,6 +521,7 @@ func detectAudioDevice(ffmpegPath string) string {
 	defer cancel()
 
 	cmd := exec.CommandContext(ctx, ffmpegPath, "-hide_banner", "-list_devices", "true", "-f", "dshow", "-i", "dummy")
+	cmd.SysProcAttr = &syscall.SysProcAttr{HideWindow: true}
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
 	_ = cmd.Run()
@@ -581,6 +585,7 @@ func (b *AudioBroadcaster) captureLoop(ctx context.Context, gen int) {
 		"-page_duration", "20000",
 		"-f", "ogg", "pipe:1",
 	)
+	cmd.SysProcAttr = &syscall.SysProcAttr{HideWindow: true}
 
 	b.mu.Lock()
 	b.cmd = cmd
