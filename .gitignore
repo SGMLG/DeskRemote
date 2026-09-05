@@ -26,4 +26,5 @@ Thumbs.db
 .idea/
 *.swp
 all_*.txt
+config.json
 

@@ -122,9 +122,26 @@ func main() {
 
 	checkDependencies()
 
-	tokenFlag := flag.String("token", "", "Cloudflare Tunnel Token")
-	pinFlag := flag.String("pin", "1234", "PIN-код для доступа к экрану")
+	cfg := loadConfig()
+
+	tokenFlag := flag.String("token", cfg.TunnelToken, "Cloudflare Tunnel Token")
+	pinFlag := flag.String("pin", cfg.PIN, "PIN-код для доступа к экрану")
+	tgTokenFlag := flag.String("tg-token", cfg.TelegramBotToken, "Telegram Bot Token")
+	tgChatFlag := flag.Int64("tg-chat", cfg.TelegramChatID, "Telegram Chat ID владельца")
 	flag.Parse()
+
+	if *tokenFlag != "" {
+		cfg.TunnelToken = *tokenFlag
+	}
+	if *pinFlag != "" {
+		cfg.PIN = *pinFlag
+	}
+	if *tgTokenFlag != "" {
+		cfg.TelegramBotToken = *tgTokenFlag
+	}
+	if *tgChatFlag != 0 {
+		cfg.TelegramChatID = *tgChatFlag
+	}
 
 	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
@@ -184,13 +201,19 @@ func main() {
 
 	http.HandleFunc("/ws", func(w http.ResponseWriter, r *http.Request) {
 		clientPin := r.URL.Query().Get("pin")
-		ok, errMsg := rateLimiter.CheckAndVerify(r, clientPin, *pinFlag)
+		ok, errMsg := rateLimiter.CheckAndVerify(r, clientPin, cfg.PIN)
 		if !ok {
 			http.Error(w, errMsg, http.StatusForbidden)
 			return
 		}
 		handleSignaling(w, r)
 	})
+
+	var tgBot *TelegramBot
+	if cfg.TelegramBotToken != "" {
+		tgBot = NewTelegramBot(cfg.TelegramBotToken, cfg.TelegramChatID, cfg.PIN)
+		tgBot.Start()
+	}
 
 	ctx, cancel := context.WithCancel(context.Background())
 	server := &http.Server{Addr: ":8080"}
@@ -201,13 +224,19 @@ func main() {
 		}
 	}()
 
-	go startCloudflareTunnel(ctx, *tokenFlag, func(url string) {
+	go startCloudflareTunnel(ctx, cfg.TunnelToken, func(url string) {
 		notifyURLReady(url)
+		if tgBot != nil {
+			tgBot.NotifyTunnelReady(url, cfg.PIN)
+		}
 	})
 
 	logToFile("[Main] Сервер запущен на :8080, инициализация системного трея...")
 	initTray(func() {
 		cancel()
+		if tgBot != nil {
+			tgBot.Stop()
+		}
 		broadcaster.Stop()
 		audioBroadcaster.Stop()
 		_ = server.Shutdown(context.Background())

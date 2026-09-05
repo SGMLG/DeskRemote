@@ -220,6 +220,13 @@ var broadcaster = &ScreenBroadcaster{
 	tracks: make(map[*webrtc.TrackLocalStaticSample]struct{}),
 }
 
+// GetActiveClientsCount returns the number of active video clients.
+func (b *ScreenBroadcaster) GetActiveClientsCount() int {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return len(b.tracks)
+}
+
 // RegisterTrack adds a track to receive screen capture frames and starts FFmpeg if needed.
 func (b *ScreenBroadcaster) RegisterTrack(track *webrtc.TrackLocalStaticSample) {
 	b.mu.Lock()
